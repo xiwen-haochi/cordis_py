@@ -2,12 +2,57 @@
 
 Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotemporal composability）元框架。
 
-当前阶段先提供设计文档：
+## 当前已实现
+
+- **Context / Fiber**：插件运行时实例、生命周期状态机、依赖驱动的自动加载/卸载。
+- **Effect 追踪**：`ctx.effect()` 支持 disposer、同步/异步 iterable，卸载时 LIFO 清理。
+- **服务与依赖注入**：`ctx.provide()`、`ctx.get()`、`ctx.set()`、`inject` 声明。
+- **响应式依赖**：先加载消费者再加载提供者也能自动激活；提供者卸载后消费者自动退出。
+- **事件系统**：`on` / `once` / `emit` / `parallel` / `serial` / `bail` / `waterfall`。
+- **Service 基类**：继承 `Service` 并调用 `super().__init__(ctx, name)` 自动注册服务。
+- **Per-realm 隔离**：`ctx.isolate(name, realm)` 可隔离同名服务。
+- **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
+- **基础 HMR**：开发期针对单个 Loader Entry 的模块重载。
+
+## 快速开始
+
+```python
+import asyncio
+from cordis_py import Context, Service, inject
+
+
+class Greeter(Service):
+    def __init__(self, ctx: Context):
+        super().__init__(ctx, "greeter")
+
+    def hello(self, name: str) -> str:
+        return f"Hello, {name}!"
+
+
+@inject("greeter")
+def greeter_plugin(ctx: Context, config: dict):
+    ctx.on("app/ready", lambda msg: print(ctx.greeter.hello(msg)))
+    return None
+
+
+async def main():
+    root = Context()
+    await root.plugin(Greeter)
+    await root.plugin(greeter_plugin)
+
+    root.emit("app/ready", "Cordis")
+    await root.fiber.dispose()
+
+
+asyncio.run(main())
+```
+
+## 文档
 
 - [介绍与实现思路（HTML）](docs/cordis_py_intro.html)
 - [应用领域与设计优化分析（HTML）](docs/cordis_py_domains_and_design.html)
 
-参考：
+## 参考
 
 - 论文：*A Programming Paradigm for Spatiotemporal Composability*
 - Node.js 版：Cordis v4 / DeepSeek Harness vendor

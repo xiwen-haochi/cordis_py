@@ -305,6 +305,13 @@ class Fiber:
         self.target = None
         if self._inertia is not None:
             await self._inertia
+        children = [
+            child
+            for child in list(self.ctx.root._fibers)
+            if child.parent_fiber is self
+        ]
+        for child in children:
+            await child.dispose()
         await self._unload()
         self.ctx.root._remove_fiber(self)
 

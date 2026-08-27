@@ -119,6 +119,31 @@ async def test_serial_short_circuit() -> None:
     await root.fiber.dispose()
 
 
+async def test_parent_dispose_cascades_to_child() -> None:
+    root = Context()
+    log: list[str] = []
+
+    def child(ctx: Context, config: dict) -> None:
+        log.append("child-start")
+        return lambda: log.append("child-stop")
+
+    def parent(ctx: Context, config: dict) -> None:
+        log.append("parent-start")
+        ctx.plugin(child)
+        return lambda: log.append("parent-stop")
+
+    parent_fiber = root.plugin(parent)
+    await parent_fiber
+    child_fiber = [f for f in root._fibers if f is not parent_fiber][0]
+    assert child_fiber.state.name == "ACTIVE"
+
+    await parent_fiber.dispose()
+    assert child_fiber.state.name == "DISPOSED"
+    assert log == ["parent-start", "child-start", "child-stop", "parent-stop"]
+
+    await root.fiber.dispose()
+
+
 async def test_isolate_keeps_services_separate() -> None:
     root = Context()
     tenant_a = root.isolate("db", "a")

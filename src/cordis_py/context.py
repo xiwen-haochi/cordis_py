@@ -124,12 +124,6 @@ class Context:
     def _remove_fiber(self, fiber: Fiber) -> None:
         if fiber in self._root._fibers:
             self._root._fibers.remove(fiber)
-        # Cascade to child fibers, if any.
-        for child in list(self._root._fibers):
-            if getattr(child, "parent_fiber", None) is fiber:
-                # This is intentionally fire-and-forget in the common case;
-                # callers can await their own fiber's disposal.
-                asyncio.create_task(child.dispose())
 
     def provide(self, name: str, value: Any) -> Disposable:
         """Register a service owned by the current fiber.

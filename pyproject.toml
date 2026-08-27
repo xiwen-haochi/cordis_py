@@ -1,5 +1,5 @@
 [project]
-name = "cordis-py"
+name = "cordis-python"
 version = "0.1.0"
 description = "A Python implementation of Cordis: spatiotemporal composability for dynamic systems"
 readme = "README.md"

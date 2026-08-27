@@ -14,6 +14,14 @@ Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotempo
 - **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
 - **基础 HMR**：开发期针对单个 Loader Entry 的模块重载。
 
+## 安装
+
+PyPI 发布名为 `cordis-python`，Python 导入名仍为 `cordis_py`：
+
+```bash
+pip install cordis-python
+```
+
 ## 快速开始
 
 ```python

@@ -57,6 +57,7 @@ asyncio.run(main())
 
 ## 文档
 
+- [开发流程](DEVELOPMENT.md)
 - [介绍与实现思路（HTML）](docs/cordis_py_intro.html)
 - [应用领域与设计优化分析（HTML）](docs/cordis_py_domains_and_design.html)
 

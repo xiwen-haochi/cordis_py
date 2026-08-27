@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from cordis_py import Context, HMR, Loader
+from cordis_py import HMR, Context, Loader
 
 
 async def test_hmr_reload_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

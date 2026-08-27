@@ -5,16 +5,12 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import Any
 
 from .errors import InactiveAccess, ServiceConflict, UndeclaredAccess
 from .fiber import Fiber, FiberState
-from .service import Service
 from .utils import Disposable, Effect, Inject, await_maybe, resolve_inject
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass
@@ -286,9 +282,8 @@ class Context:
     def _dispatch(self, event: str) -> list[Listener]:
         listeners = list(self._root._listeners.get(event, []))
         for listener in listeners:
-            if listener.once:
-                if listener in self._root._listeners.get(event, []):
-                    self._root._listeners[event].remove(listener)
+            if listener.once and listener in self._root._listeners.get(event, []):
+                self._root._listeners[event].remove(listener)
         return listeners
 
     def emit(self, event: str, *args: Any) -> None:
@@ -416,4 +411,4 @@ class Context:
         return f"Context <{self.fiber.name}>"
 
 
-__all__ = ["Context", "ServiceEntry", "Listener"]
+__all__ = ["Context", "Listener", "ServiceEntry"]

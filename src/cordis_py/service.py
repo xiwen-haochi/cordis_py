@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar, overload
 
-from .utils import resolve_inject
-
 T = TypeVar("T")
 
 

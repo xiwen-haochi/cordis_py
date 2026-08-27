@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from cordis_py import Context, Service, inject, UndeclaredAccess
+from cordis_py import Context, Service, UndeclaredAccess, inject
 
 
 class Greeter(Service):

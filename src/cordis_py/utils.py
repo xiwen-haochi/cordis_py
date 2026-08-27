@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Mapping
+from collections.abc import AsyncIterable, Callable, Iterable, Mapping
 from typing import Any, TypeVar
 
 T = TypeVar("T")
@@ -22,8 +22,9 @@ def is_async_callable(obj: Any) -> bool:
     """Return whether *obj* is an async function or an object with async __call__."""
     if inspect.iscoroutinefunction(obj):
         return True
-    call = getattr(obj, "__call__", None)
-    return inspect.iscoroutinefunction(call)
+    if callable(obj):
+        return inspect.iscoroutinefunction(obj.__call__)
+    return False
 
 
 def maybe_await(value: Any) -> Any:

@@ -39,4 +39,4 @@ class EventsService:
         return await self.ctx.waterfall(event, *args)
 
 
-__all__ = ["EventsService", "DispatchMode"]
+__all__ = ["DispatchMode", "EventsService"]

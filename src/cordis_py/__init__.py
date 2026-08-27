@@ -21,16 +21,16 @@ from .service import Service, inject
 from .utils import Disposable, Effect, Inject
 
 __all__ = [
+    "HMR",
     "Context",
     "CordisError",
-    "Disposable",
     "DispatchMode",
+    "Disposable",
     "Effect",
     "Entry",
     "EventsService",
     "Fiber",
     "FiberState",
-    "HMR",
     "InactiveAccess",
     "InactiveEffect",
     "Inject",

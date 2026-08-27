@@ -119,6 +119,22 @@ async def test_serial_short_circuit() -> None:
     await root.fiber.dispose()
 
 
+async def test_once_listener_fires_only_once() -> None:
+    root = Context()
+    seen: list[str] = []
+
+    def plugin(ctx: Context, config: dict) -> None:
+        ctx.once("ping", lambda: seen.append("pong"))
+        return None
+
+    fiber = root.plugin(plugin)
+    await fiber
+    root.emit("ping")
+    root.emit("ping")
+    assert seen == ["pong"]
+    await root.fiber.dispose()
+
+
 async def test_parent_dispose_cascades_to_child() -> None:
     root = Context()
     log: list[str] = []

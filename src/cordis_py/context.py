@@ -264,12 +264,24 @@ class Context:
 
     def once(self, event: str, handler: Callable[..., Any], *, prepend: bool = False) -> Disposable:
         """Register a one-shot event listener."""
+        fiber = self.fiber
+        listeners = self._root._listeners.setdefault(event, [])
+
+        def undo() -> None:
+            if listener in listeners:
+                listeners.remove(listener)
 
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             undo()
             return handler(*args, **kwargs)
 
-        return self.on(event, wrapper, prepend=prepend)
+        listener = Listener(wrapper, fiber)
+        if prepend:
+            listeners.insert(0, listener)
+        else:
+            listeners.append(listener)
+        fiber.add_effect(undo)
+        return undo
 
     def _dispatch(self, event: str) -> list[Listener]:
         listeners = list(self._root._listeners.get(event, []))

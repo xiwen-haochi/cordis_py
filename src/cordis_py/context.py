@@ -72,6 +72,24 @@ class Context:
         return self._parent
 
     @property
+    def events(self) -> Any:
+        """Event service facade bound to this context."""
+        from .events import EventsService
+
+        if getattr(self, "_events_cache", None) is None:
+            self._events_cache = EventsService(self)
+        return self._events_cache
+
+    @property
+    def registry(self) -> Any:
+        """Plugin registry facade bound to this context."""
+        from .registry import RegistryService
+
+        if getattr(self, "_registry_cache", None) is None:
+            self._registry_cache = RegistryService(self)
+        return self._registry_cache
+
+    @property
     def services(self) -> dict[str, Any]:
         return {
             entry.name: entry.value

@@ -264,8 +264,9 @@ class Fiber:
                 await self._unload()
         except Exception as exc:
             self._error = exc
-            self.state = FiberState.FAILED
             self.committed = {}
+            await self._unload()
+            self.state = FiberState.FAILED
 
     async def _unload(self) -> None:
         if self._disposed and self.state == FiberState.DISPOSED:

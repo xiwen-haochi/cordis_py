@@ -1,4 +1,4 @@
-"""Plugin discovery through Python package entry points."""
+"""通过 Python 包入口点发现插件。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from .loader import Loader
 
 
 def iter_entry_points(group: str = "cordis.plugins") -> list[EntryPoint]:
-    """Return all entry points registered under *group*."""
+    """返回指定 *group* 下注册的所有入口点。"""
     eps = entry_points()
     if hasattr(eps, "select"):
         return list(eps.select(group=group))
@@ -17,7 +17,7 @@ def iter_entry_points(group: str = "cordis.plugins") -> list[EntryPoint]:
 
 
 def discover(group: str = "cordis.plugins") -> list[dict[str, Any]]:
-    """Return loader-ready entry dicts for discovered plugins."""
+    """返回可直接交给 Loader 的插件条目字典列表。"""
     config: list[dict[str, Any]] = []
     for ep in iter_entry_points(group):
         config.append(
@@ -31,7 +31,7 @@ def discover(group: str = "cordis.plugins") -> list[dict[str, Any]]:
 
 
 async def load_entry_points(loader: Loader, group: str = "cordis.plugins") -> None:
-    """Discover entry points and reconcile them into a loader."""
+    """发现入口点并协调到 Loader 中。"""
     await loader.reconcile(discover(group))
 
 

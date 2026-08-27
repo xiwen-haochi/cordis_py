@@ -1,4 +1,4 @@
-"""Shared utilities for the Cordis Python runtime."""
+"""Cordis Python 运行时共用工具。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ Inject = list[str] | Mapping[str, Any] | None
 
 
 def is_async_callable(obj: Any) -> bool:
-    """Return whether *obj* is an async function or an object with async __call__."""
+    """判断 *obj* 是否为异步函数或具有异步 __call__ 的对象。"""
     if inspect.iscoroutinefunction(obj):
         return True
     if callable(obj):
@@ -28,21 +28,21 @@ def is_async_callable(obj: Any) -> bool:
 
 
 def maybe_await(value: Any) -> Any:
-    """Await *value* if it is awaitable, otherwise return it as-is."""
+    """如果 *value* 可等待则返回其自身，否则原样返回。"""
     if inspect.isawaitable(value):
         return value
     return value
 
 
 async def await_maybe(value: Any) -> Any:
-    """Await *value* if it is awaitable, otherwise return it."""
+    """如果 *value* 可等待则等待它，否则原样返回。"""
     if inspect.isawaitable(value):
         return await value
     return value
 
 
 def resolve_inject(plugin: Any) -> dict[str, Any]:
-    """Normalize a plugin's ``inject`` metadata to a name -> config map."""
+    """将插件的 ``inject`` 元数据规范化为“名称 -> 配置”映射。"""
     raw = getattr(plugin, "inject", None)
     if raw is None:
         return {}
@@ -54,10 +54,9 @@ def resolve_inject(plugin: Any) -> dict[str, Any]:
 
 
 def collect_disposers(effect: Effect) -> list[Disposable]:
-    """Collect disposers from supported effect return shapes (sync only).
+    """从支持的效果返回值中收集 disposer（仅同步）。
 
-    Async iterables are handled by the fiber/context callers because they need
-    an async loop.
+    异步可迭代对象由 fiber/context 调用方处理，因为需要异步事件循环。
     """
     if effect is None:
         return []

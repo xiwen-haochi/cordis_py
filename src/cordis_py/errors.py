@@ -1,10 +1,10 @@
-"""Errors used by the Cordis Python runtime."""
+"""Cordis Python 运行时使用的异常。"""
 
 from __future__ import annotations
 
 
 class CordisError(Exception):
-    """Base error with a stable machine-readable code."""
+    """带有稳定机器可读错误码的基础异常。"""
 
     def __init__(self, code: str, message: str | None = None) -> None:
         self.code = code
@@ -12,42 +12,42 @@ class CordisError(Exception):
 
 
 class InactiveAccess(CordisError):
-    """Raised when a plugin accesses a declared but not-yet-active service."""
+    """当插件访问已声明但尚未激活的服务时抛出。"""
 
     def __init__(self, name: str) -> None:
         super().__init__("INACTIVE_ACCESS", f"cannot get required service {name!r} in inactive context")
 
 
 class UndeclaredAccess(CordisError):
-    """Raised when a plugin accesses a service that was never declared."""
+    """当插件访问从未声明的服务时抛出。"""
 
     def __init__(self, name: str) -> None:
         super().__init__("UNDECLARED_ACCESS", f"cannot get property {name!r} without inject")
 
 
 class ServiceConflict(CordisError):
-    """Raised when a service is provided more than once in the same scope."""
+    """当同一作用域内服务被重复提供时抛出。"""
 
     def __init__(self, name: str, owner: str) -> None:
         super().__init__("SERVICE_CONFLICT", f"service {name!r} has been registered by {owner!r}")
 
 
 class InvalidEffect(CordisError):
-    """Raised when an effect callback returns an unsupported value."""
+    """当效果回调返回不支持的值时抛出。"""
 
     def __init__(self, value: object = None) -> None:
         super().__init__("INVALID_EFFECT", f"invalid effect value: {value!r}")
 
 
 class InvalidPlugin(CordisError):
-    """Raised when a plugin is not a supported shape."""
+    """当插件不是受支持的形态时抛出。"""
 
     def __init__(self, plugin: object) -> None:
         super().__init__("INVALID_PLUGIN", f"invalid plugin: {plugin!r}")
 
 
 class InactiveEffect(CordisError):
-    """Raised when an effect is registered after the fiber was disposed."""
+    """当 fiber 已卸载后仍注册效果时抛出。"""
 
     def __init__(self) -> None:
         super().__init__("INACTIVE_EFFECT", "cannot register an effect on an inactive fiber")

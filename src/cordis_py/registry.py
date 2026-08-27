@@ -1,4 +1,4 @@
-"""Plugin registry convenience service."""
+"""插件注册表便捷服务。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .utils import Inject
 
 
 class RegistryService:
-    """Thin wrapper exposing plugin registration on a context."""
+    """在 Context 上暴露插件注册能力的轻量封装。"""
 
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx

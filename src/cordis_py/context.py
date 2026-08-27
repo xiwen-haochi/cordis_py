@@ -1,4 +1,4 @@
-"""Context: the first-class container and plugin entry point."""
+"""Context：第一类容器与插件入口。"""
 
 from __future__ import annotations
 
@@ -28,10 +28,10 @@ class Listener:
 
 
 class Context:
-    """Root or child dependency container.
+    """根或子依赖容器。
 
-    ``Context()`` creates the root. Plugins receive a derived child context,
-    whose :attr:`fiber` is the plugin's runtime instance.
+    ``Context()`` 创建根上下文。插件会获得一个派生的子上下文，
+    其 :attr:`fiber` 即插件运行实例。
     """
 
     def __init__(self, parent: Context | None = None, fiber: Fiber | None = None) -> None:
@@ -50,7 +50,7 @@ class Context:
             self._root = parent._root
 
     # ------------------------------------------------------------------
-    # basic properties
+    # 基本属性
     # ------------------------------------------------------------------
 
     @property
@@ -69,7 +69,7 @@ class Context:
 
     @property
     def events(self) -> Any:
-        """Event service facade bound to this context."""
+        """绑定到当前上下文的事件服务外观。"""
         from .events import EventsService
 
         if getattr(self, "_events_cache", None) is None:
@@ -78,7 +78,7 @@ class Context:
 
     @property
     def registry(self) -> Any:
-        """Plugin registry facade bound to this context."""
+        """绑定到当前上下文的插件注册表外观。"""
         from .registry import RegistryService
 
         if getattr(self, "_registry_cache", None) is None:
@@ -98,7 +98,7 @@ class Context:
         return self._root._uid
 
     # ------------------------------------------------------------------
-    # service / coeffect primitives
+    # 服务 / coeffect 原语
     # ------------------------------------------------------------------
 
     def _realm_for(self, name: str) -> Any:
@@ -140,10 +140,10 @@ class Context:
             self._root._fibers.remove(fiber)
 
     def provide(self, name: str, value: Any) -> Disposable:
-        """Register a service owned by the current fiber.
+        """注册由当前 fiber 拥有的服务。
 
-        The service becomes visible to dependents only while the owning fiber is
-        ACTIVE. It is removed automatically when the fiber unloads.
+        只有属主 fiber 处于 ACTIVE 状态时，该服务才对依赖方可见；
+        fiber 卸载时会自动移除该服务。
         """
         fiber = self.fiber
         key = self._service_key(name)
@@ -165,7 +165,7 @@ class Context:
         return undo
 
     def get(self, name: str, strict: bool = True) -> Any:
-        """Read a service value directly, without inject enforcement."""
+        """直接读取服务值，不执行 inject 强制校验。"""
         entry = self._root._services.get(self._service_key(name))
         if entry is None:
             return None
@@ -174,7 +174,7 @@ class Context:
         return entry.value
 
     def set(self, name: str, value: Any) -> None:
-        """Update a service value owned by the current fiber."""
+        """更新当前 fiber 拥有的服务值。"""
         fiber = self.fiber
         key = self._service_key(name)
         entry = self._root._services.get(key)
@@ -187,15 +187,15 @@ class Context:
             self._notify([name])
 
     # ------------------------------------------------------------------
-    # effect
+    # 效果
     # ------------------------------------------------------------------
 
     def effect(self, callback: Callable[[], Effect], label: str = "anonymous") -> Disposable:
-        """Register a reversible effect on the current fiber."""
+        """在当前 fiber 上注册可逆效果。"""
         return self.fiber.effect(callback, label)
 
     # ------------------------------------------------------------------
-    # plugin loading
+    # 插件加载
     # ------------------------------------------------------------------
 
     def _make_plugin_context(self, fiber: Fiber) -> Context:
@@ -206,7 +206,7 @@ class Context:
         return child
 
     def plugin(self, plugin: Any, config: Any = None) -> Fiber:
-        """Load a plugin in the current context and return its fiber."""
+        """在当前上下文中加载插件并返回其 fiber。"""
         if not callable(plugin) and not hasattr(plugin, "apply"):
             raise TypeError(f"invalid plugin: {plugin!r}")
         inject = resolve_inject(plugin)
@@ -224,7 +224,7 @@ class Context:
         return fiber
 
     def inject(self, deps: Inject, callback: Callable[..., Any], config: Any = None) -> Fiber:
-        """Run a callback once the requested services are available."""
+        """当所需服务可用时运行回调。"""
 
         def wrapper(ctx: Context, conf: Any) -> Any:
             return callback(ctx, conf)
@@ -238,11 +238,11 @@ class Context:
         return self.plugin(wrapper, config)
 
     # ------------------------------------------------------------------
-    # events
+    # 事件
     # ------------------------------------------------------------------
 
     def on(self, event: str, handler: Callable[..., Any], *, prepend: bool = False) -> Disposable:
-        """Register an event listener owned by the current fiber."""
+        """注册由当前 fiber 拥有的事件监听器。"""
         fiber = self.fiber
         listener = Listener(handler, fiber)
         listeners = self._root._listeners.setdefault(event, [])
@@ -259,7 +259,7 @@ class Context:
         return undo
 
     def once(self, event: str, handler: Callable[..., Any], *, prepend: bool = False) -> Disposable:
-        """Register a one-shot event listener."""
+        """注册一次性事件监听器。"""
         fiber = self.fiber
         listeners = self._root._listeners.setdefault(event, [])
 
@@ -287,18 +287,18 @@ class Context:
         return listeners
 
     def emit(self, event: str, *args: Any) -> None:
-        """Dispatch synchronously; async listeners are scheduled as tasks."""
+        """同步分发；异步监听器会被调度为任务。"""
         for listener in self._dispatch(event):
             try:
                 result = listener.handler(*args)
                 if inspect.isawaitable(result):
                     asyncio.create_task(result)
             except Exception:
-                # Event listener failures should not break other listeners.
+                # 单个监听器失败不应中断其他监听器。
                 continue
 
     async def parallel(self, event: str, *args: Any) -> None:
-        """Run all listeners concurrently and wait for completion."""
+        """并发运行所有监听器并等待完成。"""
         listeners = self._dispatch(event)
         results = await asyncio.gather(
             *(listener.handler(*args) for listener in listeners),
@@ -309,7 +309,7 @@ class Context:
             raise errors[0]
 
     async def serial(self, event: str, *args: Any) -> Any:
-        """Run listeners in order, awaiting each, until a bail value is returned."""
+        """按顺序运行监听器并逐个 await，直到返回短路值。"""
         for listener in self._dispatch(event):
             result = await await_maybe(listener.handler(*args))
             if result is not None and result is not False:
@@ -317,7 +317,7 @@ class Context:
         return None
 
     def bail(self, event: str, *args: Any) -> Any:
-        """Run listeners synchronously until one returns a bail value."""
+        """同步运行监听器，直到其中一个返回短路值。"""
         for listener in self._dispatch(event):
             result = listener.handler(*args)
             if result is not None and result is not False:
@@ -325,10 +325,9 @@ class Context:
         return None
 
     async def waterfall(self, event: str, *args: Any) -> Any:
-        """Compose listeners as a middleware chain.
+        """将监听器组合成中间件链。
 
-        Each listener receives ``(*args, next)``. Not calling ``next`` vetoes
-        the remaining chain.
+        每个监听器接收 ``(*args, next)``；不调用 ``next`` 会否决后续链路。
         """
         listeners = self._dispatch(event)
 
@@ -346,14 +345,14 @@ class Context:
         return await run(0, args)
 
     # ------------------------------------------------------------------
-    # scoped contexts
+    # 作用域上下文
     # ------------------------------------------------------------------
 
     def isolate(self, name: str, realm: Any = None) -> Context:
-        """Create a child context with an isolated service scope for *name*.
+        """为 *name* 创建隔离服务作用域的子上下文。
 
-        This is a lightweight isolation layer: the child carries its own realm
-        annotation. A full per-realm store will be layered on top in the loader.
+        这是轻量隔离层：子上下文携带自己的 realm 标记。
+        更完整的按 realm 存储后续会在 Loader 中叠加。
         """
         child = Context(self)
         child._fiber = self.fiber
@@ -362,7 +361,7 @@ class Context:
         return child
 
     def intercept(self, name: str, metadata: Any) -> Context:
-        """Create a child context carrying intercept metadata for *name*."""
+        """创建携带 *name* 拦截元数据的子上下文。"""
         child = Context(self)
         child._fiber = self.fiber
         child._isolation = dict(self._isolation)
@@ -371,25 +370,25 @@ class Context:
         return child
 
     # ------------------------------------------------------------------
-    # attribute access
+    # 属性访问
     # ------------------------------------------------------------------
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(name)
         fiber = self.fiber
-        # A plugin's own committed view has highest priority.
+        # 插件自身的 committed 视图具有最高优先级。
         if name in fiber.committed:
             return fiber.committed[name]
         if name in fiber.inject:
             raise InactiveAccess(name)
         if fiber.is_root:
-            # Direct root-context access is allowed for boot-time services.
+            # 根上下文的直接访问允许用于启动期服务。
             value = self._get_active_service_value(name)
             if value is not None:
                 return value
             raise UndeclaredAccess(name)
-        # Walk up the context tree.
+        # 沿上下文树向上查找。
         current = self._parent
         while current is not None:
             current_fiber = current.fiber
@@ -403,7 +402,7 @@ class Context:
         raise UndeclaredAccess(name)
 
     async def dispose_all(self) -> None:
-        """Dispose every plugin fiber in reverse load order."""
+        """按加载顺序的逆序卸载所有插件 fiber。"""
         for fiber in reversed(list(self._root._fibers)):
             await fiber.dispose()
 

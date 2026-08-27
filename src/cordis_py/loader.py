@@ -1,4 +1,4 @@
-"""Declarative component loader for Cordis Python."""
+"""Cordis Python 声明式组件加载器。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .fiber import Fiber
 
 
 def import_string(path: str) -> Any:
-    """Import ``module:attr`` or ``module.attr`` and return the attribute."""
+    """导入 ``module:attr`` 或 ``module.attr`` 并返回对应属性。"""
     if ":" in path:
         module_name, attr = path.split(":", 1)
     else:
@@ -25,7 +25,7 @@ def import_string(path: str) -> Any:
 
 @dataclass
 class Entry:
-    """Declarative description of one fiber to be loaded."""
+    """待加载 fiber 的声明式描述。"""
 
     id: str
     url: str
@@ -47,11 +47,10 @@ class Entry:
 
 
 class Loader:
-    """Load and reconcile plugins from declarative configuration.
+    """从声明式配置加载并协调插件。
 
-    The loader accepts a list of :class:`Entry`-shaped dictionaries or a
-    ``{"plugins": [...]}`` document. It creates fibers lazily and can be updated
-    incrementally through :meth:`reconcile`.
+    Loader 接受 :class:`Entry` 形状的字典列表，或
+    ``{"plugins": [...]}`` 文档。它会惰性创建 fiber，并可通过 :meth:`reconcile` 增量更新。
     """
 
     def __init__(self, ctx: Context) -> None:
@@ -83,26 +82,26 @@ class Loader:
         raise ValueError(f"unsupported config file suffix: {suffix}")
 
     async def include(self, path: str | Path) -> None:
-        """Load a configuration file and set it as the desired state."""
+        """加载配置文件并将其设为期望状态。"""
         config = self._load_file(path)
         await self.reconcile(config)
 
     async def reconcile(self, config: Any) -> None:
-        """Make the running fiber tree match the given declarative config."""
+        """让运行中的 fiber 树与给定声明式配置保持一致。"""
         raw_entries = self._normalize_config(config)
         desired: dict[str, Entry] = {}
         for raw in raw_entries:
             entry = Entry.from_dict(raw)
             desired[entry.id] = entry
 
-        # Remove entries that disappeared.
+        # 移除已消失的条目。
         for entry_id, fiber in list(self.fibers.items()):
             if entry_id not in desired:
                 await fiber.dispose()
                 self.fibers.pop(entry_id, None)
                 self.entries.pop(entry_id, None)
 
-        # Add or update entries.
+        # 新增或更新条目。
         for entry_id, entry in desired.items():
             old = self.entries.get(entry_id)
             if old is None:
@@ -128,7 +127,7 @@ class Loader:
     async def _start_entry(self, entry: Entry) -> Fiber:
         plugin = import_string(entry.url)
         context = self.ctx
-        # Apply simple isolate/intercept as child contexts when present.
+        # 存在 isolate/intercept 时，通过子上下文应用简单隔离/拦截。
         for name, realm in entry.isolate.items():
             context = context.isolate(name, realm)
         for name, metadata in entry.intercept.items():
@@ -139,7 +138,7 @@ class Loader:
         return fiber
 
     async def disable(self, entry_id: str) -> None:
-        """Disable an entry and unload its fiber."""
+        """禁用条目并卸载其 fiber。"""
         fiber = self.fibers.pop(entry_id, None)
         if fiber is not None:
             await fiber.dispose()
@@ -147,7 +146,7 @@ class Loader:
             self.entries[entry_id].disabled = True
 
     async def enable(self, entry_id: str) -> None:
-        """Enable a previously disabled entry."""
+        """启用之前被禁用的条目。"""
         entry = self.entries.get(entry_id)
         if entry is None:
             raise KeyError(entry_id)
@@ -156,7 +155,7 @@ class Loader:
             await self._start_entry(entry)
 
     async def dispose(self) -> None:
-        """Dispose all loader-managed fibers."""
+        """卸载所有由 Loader 管理的 fiber。"""
         for fiber in reversed(list(self.fibers.values())):
             await fiber.dispose()
         self.fibers.clear()

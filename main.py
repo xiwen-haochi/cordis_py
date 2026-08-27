@@ -1,4 +1,4 @@
-"""Minimal runnable demo for cordis-py."""
+"""cordis-py 的最小可运行演示。"""
 
 from __future__ import annotations
 

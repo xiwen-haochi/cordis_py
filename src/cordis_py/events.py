@@ -1,4 +1,4 @@
-"""Event service facade compatible with the Cordis API."""
+"""兼容 Cordis API 的事件服务外观。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ DispatchMode = Literal["emit", "parallel", "serial", "bail", "waterfall"]
 
 
 class EventsService:
-    """Delegate event operations to a :class:`Context`."""
+    """将事件操作委托给 :class:`Context`。"""
 
     def __init__(self, ctx: Context) -> None:
         self.ctx = ctx

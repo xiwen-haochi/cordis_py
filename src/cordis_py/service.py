@@ -1,4 +1,4 @@
-"""Service base class and dependency-injection decorator."""
+"""Service 基类与依赖注入装饰器。"""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ T = TypeVar("T")
 
 
 class Service:
-    """Base class for services registered on a Cordis context.
+    """注册到 Cordis Context 上的服务基类。
 
-    Subclasses call ``super().__init__(ctx, name)`` or rely on the class-level
-    ``provide`` attribute for the service name.
+    子类调用 ``super().__init__(ctx, name)``，或使用类级 ``provide`` 属性指定服务名。
     """
 
     provide: str | None = None
@@ -53,9 +52,9 @@ def inject(deps: Mapping[str, Any], /) -> Callable[[T], T]: ...
 
 
 def inject(deps: str | list[str] | Mapping[str, Any], /):
-    """Declare required services on a plugin function or class.
+    """在插件函数或类上声明所需服务。
 
-    Usage::
+    用法示例：
 
         @inject("model")
         def my_plugin(ctx, config): ...

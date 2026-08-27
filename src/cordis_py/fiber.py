@@ -1,4 +1,4 @@
-"""Fiber: one runtime instantiation of a plugin/component."""
+"""Fiber：插件/组件的一次运行实例。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class FiberState(str, Enum):
-    """Lifecycle states of a fiber."""
+    """fiber 的生命周期状态。"""
 
     PENDING = "pending"
     LOADING = "loading"
@@ -27,7 +27,7 @@ class FiberState(str, Enum):
 
 
 async def _collect_async_effect(result: Any) -> list[Disposable]:
-    """Convert supported effect results to a list of disposers."""
+    """将支持的效果返回值转换为 disposer 列表。"""
     if result is None:
         return []
     if callable(result):
@@ -50,7 +50,7 @@ async def _collect_async_effect(result: Any) -> list[Disposable]:
 
 
 def _collect_sync_effect(result: Any) -> list[Disposable]:
-    """Convert a synchronous effect result to disposers."""
+    """将同步效果返回值转换为 disposer 列表。"""
     if result is None:
         return []
     if callable(result):
@@ -72,12 +72,12 @@ async def _run_disposers(disposers: list[Disposable]) -> None:
             if inspect.isawaitable(result):
                 await result
         except Exception:
-            # Keep cleanup resilient: one bad disposer must not prevent others.
+            # 保证清理过程有韧性：单个 disposer 失败不能阻止其他清理。
             continue
 
 
 class Fiber:
-    """A plugin instance with tracked effects and dependency lifecycle."""
+    """带有可追踪效果和依赖生命周期的插件实例。"""
 
     def __init__(
         self,
@@ -121,12 +121,11 @@ class Fiber:
         self._effects.append(disposer)
 
     def effect(self, callback: Callable[[], Effect], label: str = "anonymous") -> Disposable:
-        """Register a reversible effect on this fiber.
+        """在此 fiber 上注册可逆效果。
 
-        The callback may return a disposer, an iterable of disposers, an async
-        iterable of disposers, or ``None``. The returned callable tears down all
-        collected disposers in LIFO order. Async effects are collected in a
-        background task while the plugin keeps running.
+        回调可以返回 disposer、disposer 可迭代对象、异步 disposer 可迭代对象或 ``None``。
+        返回的可调用对象会按 LIFO 顺序清理所有已收集的 disposer。
+        异步效果会在插件继续运行的同时由后台任务收集。
         """
         self.assert_active()
         result = callback()
@@ -230,7 +229,7 @@ class Fiber:
         task.add_done_callback(_done)
 
     def refresh(self) -> None:
-        """Recompute the dependency target and schedule load/unload if needed."""
+        """重新计算依赖目标，并在需要时安排加载/卸载。"""
         if self.is_root or self._disposed:
             return
         target = self._compute_target()
@@ -284,7 +283,7 @@ class Fiber:
             self.state = FiberState.PENDING
 
     async def wait(self) -> Fiber:
-        """Wait until the current lifecycle transition settles."""
+        """等待当前生命周期转换完成。"""
         if self._inertia is not None:
             await self._inertia
         if self._error is not None and not self._disposed:
@@ -295,7 +294,7 @@ class Fiber:
         return self.wait().__await__()
 
     async def dispose(self) -> None:
-        """Dispose this fiber and all of its effects."""
+        """卸载此 fiber 及其所有效果。"""
         if self.is_root:
             await self.ctx.dispose_all()
             return
@@ -316,14 +315,14 @@ class Fiber:
         self.ctx.root._remove_fiber(self)
 
     async def restart(self) -> None:
-        """Dispose current effects, then reload if dependencies are satisfied."""
+        """清理当前效果；若依赖仍满足则重新加载。"""
         self.assert_active()
         self.target = None
         self.refresh()
         await self.wait()
 
     async def update(self, config: Any) -> None:
-        """Apply a new config and restart the fiber."""
+        """应用新配置并重启 fiber。"""
         self.assert_active()
         self.config = config
         self.target = None

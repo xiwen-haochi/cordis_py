@@ -1,4 +1,4 @@
-"""Cordis Python: spatiotemporal composability for dynamic systems."""
+"""Cordis Python：面向动态系统的时空可组合性。"""
 
 from __future__ import annotations
 

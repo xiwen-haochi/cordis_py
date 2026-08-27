@@ -12,7 +12,10 @@ from .errors import (
     ServiceConflict,
     UndeclaredAccess,
 )
+from .events import DispatchMode, EventsService
 from .fiber import Fiber, FiberState
+from .loader import Entry, Loader
+from .registry import RegistryService
 from .service import Service, inject
 from .utils import Disposable, Effect, Inject
 
@@ -20,7 +23,10 @@ __all__ = [
     "Context",
     "CordisError",
     "Disposable",
+    "DispatchMode",
     "Effect",
+    "Entry",
+    "EventsService",
     "Fiber",
     "FiberState",
     "InactiveAccess",
@@ -28,6 +34,8 @@ __all__ = [
     "Inject",
     "InvalidEffect",
     "InvalidPlugin",
+    "Loader",
+    "RegistryService",
     "Service",
     "ServiceConflict",
     "UndeclaredAccess",

@@ -137,6 +137,7 @@
   <a href="#scenarios">3. 典型落地场景</a>
   <a href="#design-changes">4. 设计调整</a>
   <a href="#priority">5. 优先级建议</a>
+  <a href="#todo">TODO / 实现状态</a>
   <a href="#conclusion">6. 结论</a>
 </nav>
 
@@ -536,6 +537,39 @@
     <strong>建议路径</strong>：先用 P0 在 Agent 或 Bot 领域做一个小而完整的示例，验证“可逆副作用 + 依赖响应”的真实收益；再补 Loader 和插件生态；最后再做跨进程沙箱和分布式增强。
   </div>
 </section>
+
+<section id="todo">
+  <h2>TODO / 实现状态</h2>
+  <p>此节记录当前 Python 实现的功能完成度，便于后续迭代时对照查看。</p>
+
+  <h3>已完成</h3>
+  <ul>
+    <li>Context / Fiber 核心运行时</li>
+    <li>Effect 追踪与清理</li>
+    <li>依赖注入与响应式生命周期</li>
+    <li>事件系统</li>
+    <li>Service 基类与装饰器</li>
+    <li>按 realm 的服务隔离</li>
+    <li>声明式 Loader</li>
+    <li>开发期最小 HMR</li>
+    <li>Python entry points 插件发现</li>
+  </ul>
+
+  <h3>待办 / 后续功能点</h3>
+  <ul>
+    <li>完整同步/异步双模式封装</li>
+    <li>跨进程 Bridge / 远程服务</li>
+    <li>沙箱与不可信插件隔离</li>
+    <li>更完整的 HMR 依赖图分类</li>
+    <li>配置 overlay / 租户配置派生</li>
+    <li>服务版本约束和接口校验</li>
+  </ul>
+
+  <div class="note">
+    <strong>实现依据说明：</strong>仅参考论文与 Node.js 版 Cordis，不参考任何现有 Python Cordis 实现包。
+  </div>
+</section>
+
 
 <section id="conclusion">
   <h2>6. 结论</h2>

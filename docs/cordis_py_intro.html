@@ -138,6 +138,7 @@
   <a href="#design">3. Python 总体设计</a>
   <a href="#api">4. 核心 API 草案</a>
   <a href="#phases">5. 实现路线</a>
+  <a href="#todo">TODO / 实现状态</a>
   <a href="#packaging">6. 打包与工程化</a>
   <a href="#risks">7. 风险与取舍</a>
 </nav>
@@ -379,23 +380,21 @@ class MyObjectPlugin:
   <h4>事件分发</h4>
   <table>
     <tr><th>方法</th><th>语义</th><th>Python 注意点</th></tr>
-    <tr><td><code>emit</code></td><td>同步广播，不等待异步监听器</td><td>与现有简易版一致；异步监听器可 <code>asyncio.ensure_future</code> 调度。</td></tr>
+    <tr><td><code>emit</code></td><td>同步广播，不等待异步监听器</td><td>同步广播即可；异步监听器可 <code>asyncio.ensure_future</code> 调度。</td></tr>
     <tr><td><code>parallel</code></td><td>并发执行并等待全部完成</td><td>用 <code>asyncio.gather(..., return_exceptions=True)</code> 或 <code>asyncio.TaskGroup</code>。</td></tr>
     <tr><td><code>serial</code></td><td>按注册顺序逐一 await，遇 bail 值短路</td><td>把非 <code>None/False</code> 返回值视为短路值。</td></tr>
     <tr><td><code>bail</code></td><td>同步短路，返回第一个非空结果</td><td>适合“找到第一个能处理者”的场景。</td></tr>
     <tr><td><code>waterfall</code></td><td>中间件链</td><td>监听器接收 <code>(*args, next)</code>；不调用 <code>next()</code> 即短路。</td></tr>
   </table>
 
-  <h3>3.4 与现有简易版的关系</h3>
-  <p>已有 <code>code/for_work/cordis.py</code> 是一份很好的教学原型，但它还缺少论文/Node 版中的一些重要机制：</p>
+  <h3>3.4 实现依据与边界</h3>
+  <p>本实现<strong>不参考任何现有的 Python Cordis 包</strong>。</p>
+  <p>设计参考仅包括：</p>
   <ul>
-    <li>没有 <code>realm/isolate</code>，服务解析是扁平的全局表。</li>
-    <li>没有正式 <code>FiberState</code> 的“惯性转换”和并发安全（in-flight transition 合并）。</li>
-    <li>没有 <code>parallel / serial / bail / waterfall</code> 事件模式。</li>
-    <li>没有声明式 Loader、Entry 协调和 HMR。</li>
-    <li>没有 Service 基类、<code>accessor</code>、<code>mixin</code>、拦截数据。</li>
+    <li>论文《A Programming Paradigm for Spatiotemporal Composability》；</li>
+    <li>Node.js 版 Cordis（Cordis v4 / DeepSeek Harness vendor）。</li>
   </ul>
-  <p>Python 正式版应在此基础上扩展，而不是推翻整个设计。</p>
+  <p>因此本项目不存在需要兼容的历史 Python 实现；API 以 Node 版 Cordis 为参照，并结合 Python 异步生态做了必要调整。</p>
 </section>
 
 <section id="api">
@@ -517,6 +516,40 @@ await hmr.watch(["src/myapp"])   # 开发时监听源码变化
   </div>
 </section>
 
+<section id="todo">
+  <h2>TODO / 实现状态</h2>
+  <p>此节用于记录当前 Python 实现已经完成和尚未完成的功能点，避免后续迭代时遗忘。</p>
+
+  <h3>已完成</h3>
+  <ul>
+    <li>Context / Fiber 核心运行时与生命周期状态机</li>
+    <li>Effect 追踪与 LIFO 清理</li>
+    <li>服务注册、依赖注入与响应式依赖</li>
+    <li>事件系统：on / once / emit / parallel / serial / bail / waterfall</li>
+    <li>Service 基类与 @inject 装饰器</li>
+    <li>按 realm 的服务隔离</li>
+    <li>声明式 Loader：JSON / YAML / TOML、reconcile、disable / enable</li>
+    <li>开发期最小 HMR</li>
+    <li>Python entry points 插件发现</li>
+    <li>单元测试与可运行 demo</li>
+  </ul>
+
+  <h3>待办 / 后续功能点</h3>
+  <ul>
+    <li>完整同步/异步双模式封装</li>
+    <li>跨进程 Bridge / 远程服务</li>
+    <li>沙箱与不可信插件隔离</li>
+    <li>更完整的 HMR 依赖图分类</li>
+    <li>配置 overlay / 租户配置派生</li>
+    <li>服务版本约束和接口校验</li>
+  </ul>
+
+  <div class="note">
+    <strong>实现依据说明：</strong>本项目仅参考论文《A Programming Paradigm for Spatiotemporal Composability》与 Node.js 版 Cordis（Cordis v4 / DeepSeek Harness vendor）进行设计，不参考任何现有的 Python Cordis 实现包。
+  </div>
+</section>
+
+
 <section id="packaging">
   <h2>6. 打包与工程化</h2>
   <p>仓库已使用 uv 和 Python 3.12。建议按以下方式组织 <code>pyproject.toml</code>：</p>
@@ -563,7 +596,7 @@ uv pip install -e .</code></pre>
     <li><strong>异步生命周期复杂度</strong>：论文的“惯性”要求 transition 期间新请求不能打断，需要仔细处理 <code>inertia</code> 与取消/并发。建议用单一事件循环任务队列和状态机单测覆盖。</li>
     <li><strong>模块热替换的 Python 局限</strong>：<code>importlib.reload</code> 不会自动清理旧模块的所有引用，且对扩展模块、C 扩展、已实例化类不友好。HMR 先面向纯 Python 开发场景，并明确“不可热替换则全量重启”的边界。</li>
     <li><strong>配置校验</strong>：Node 版使用 Standard Schema。Python 可先支持 <code>pydantic</code> 或轻量 callable 校验器，避免强依赖。</li>
-    <li><strong>命名与兼容</strong>：是否存在需要与既有 <code>cordis.py</code> 教程保持兼容的代码？建议正式包使用 <code>src/cordis_py</code> 命名空间，并保留旧脚本可作为迁移参考。</li>
+    <li><strong>命名与兼容</strong>：本 Python 实现不参考任何现有的 Python Cordis 包，命名以 Node 版 Cordis 为参照；后续发布时应保持公共 API 稳定，并记录破坏性变更。</li>
     <li><strong>是否首版包含 Loader/HMR</strong>：若用户只想要核心运行时，可拆成 <code>cordis-py</code> 与 <code>cordis-py-loader</code> 两个包，与 Node 生态保持一致。</li>
   </ul>
 </section>

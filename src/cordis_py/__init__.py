@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .context import Context
+from .discovery import discover, load_entry_points
 from .errors import (
     CordisError,
     InactiveAccess,
@@ -41,7 +42,9 @@ __all__ = [
     "Service",
     "ServiceConflict",
     "UndeclaredAccess",
+    "discover",
     "inject",
+    "load_entry_points",
 ]
 
 __version__ = "0.1.0"

@@ -215,7 +215,7 @@ class Fiber:
         if not self.inject:
             return ()
         for name in self.inject:
-            if not self.ctx.root._has_active_service(name):
+            if not self.ctx._has_active_service(name):
                 return None
         return tuple(sorted(self.inject))
 
@@ -248,9 +248,9 @@ class Fiber:
         self.state = FiberState.LOADING
         target0 = self.target
         self.committed = {
-            name: self.ctx.root._get_active_service_value(name)
+            name: self.ctx._get_active_service_value(name)
             for name in self.inject
-            if self.ctx.root._has_active_service(name)
+            if self.ctx._has_active_service(name)
         }
         try:
             result = await self._invoke_plugin()
@@ -258,7 +258,7 @@ class Fiber:
             self._error = None
             if not self._disposed and self.target == target0:
                 self.state = FiberState.ACTIVE
-                self.ctx.root._notify_provided(self.store)
+                self.ctx._notify_provided(self.store)
             else:
                 self.target = None
                 await self._unload()

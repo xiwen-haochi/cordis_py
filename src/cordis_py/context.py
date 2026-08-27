@@ -74,8 +74,8 @@ class Context:
     @property
     def services(self) -> dict[str, Any]:
         return {
-            name: entry.value
-            for name, entry in self._root._services.items()
+            entry.name: entry.value
+            for entry in self._root._services.values()
             if entry.provider.state == FiberState.ACTIVE
         }
 
@@ -87,12 +87,18 @@ class Context:
     # service / coeffect primitives
     # ------------------------------------------------------------------
 
+    def _realm_for(self, name: str) -> Any:
+        return self._isolation.get(name)
+
+    def _service_key(self, name: str) -> tuple[Any, str]:
+        return (self._realm_for(name), name)
+
     def _has_active_service(self, name: str) -> bool:
-        entry = self._root._services.get(name)
+        entry = self._root._services.get(self._service_key(name))
         return entry is not None and entry.provider.state == FiberState.ACTIVE
 
     def _get_active_service_value(self, name: str) -> Any:
-        entry = self._root._services.get(name)
+        entry = self._root._services.get(self._service_key(name))
         if entry is None or entry.provider.state != FiberState.ACTIVE:
             return None
         return entry.value
@@ -109,12 +115,11 @@ class Context:
             self._notify(names)
 
     def _remove_fiber_services(self, fiber: Fiber) -> None:
-        for name in list(fiber.store):
-            entry = self._root._services.get(name)
-            if entry is not None and entry.provider is fiber:
-                del self._root._services[name]
-                fiber.store.discard(name)
-                self._notify([name])
+        for key, entry in list(self._root._services.items()):
+            if entry.provider is fiber:
+                del self._root._services[key]
+                fiber.store.discard(entry.name)
+                self._notify([entry.name])
 
     def _remove_fiber(self, fiber: Fiber) -> None:
         if fiber in self._root._fibers:
@@ -133,21 +138,19 @@ class Context:
         ACTIVE. It is removed automatically when the fiber unloads.
         """
         fiber = self.fiber
-        if fiber.is_root:
-            # Root-level provide is allowed for boot-time services.
-            pass
-        entry = self._root._services.get(name)
+        key = self._service_key(name)
+        entry = self._root._services.get(key)
         if entry is not None and entry.provider is not fiber:
             raise ServiceConflict(name, entry.provider.name)
-        self._root._services[name] = ServiceEntry(name, value, fiber)
+        self._root._services[key] = ServiceEntry(name, value, fiber)
         fiber.store.add(name)
         if fiber.state == FiberState.ACTIVE:
             self._notify([name])
 
         def undo() -> None:
-            current = self._root._services.get(name)
+            current = self._root._services.get(key)
             if current is not None and current.provider is fiber:
-                del self._root._services[name]
+                del self._root._services[key]
                 fiber.store.discard(name)
                 self._notify([name])
 
@@ -155,7 +158,7 @@ class Context:
 
     def get(self, name: str, strict: bool = True) -> Any:
         """Read a service value directly, without inject enforcement."""
-        entry = self._root._services.get(name)
+        entry = self._root._services.get(self._service_key(name))
         if entry is None:
             return None
         if strict and entry.provider.state != FiberState.ACTIVE:
@@ -165,7 +168,8 @@ class Context:
     def set(self, name: str, value: Any) -> None:
         """Update a service value owned by the current fiber."""
         fiber = self.fiber
-        entry = self._root._services.get(name)
+        key = self._service_key(name)
+        entry = self._root._services.get(key)
         if entry is None:
             raise ServiceConflict(name, "nobody")
         if entry.provider is not fiber:
@@ -189,6 +193,8 @@ class Context:
     def _make_plugin_context(self, fiber: Fiber) -> Context:
         child = Context(self)
         child._fiber = fiber
+        child._isolation = dict(self._isolation)
+        child._intercept = dict(self._intercept)
         return child
 
     def plugin(self, plugin: Any, config: Any = None) -> Fiber:
@@ -332,6 +338,7 @@ class Context:
         """
         child = Context(self)
         child._fiber = self.fiber
+        child._isolation = dict(self._isolation)
         child._isolation[name] = realm if realm is not None else object()
         return child
 
@@ -339,6 +346,8 @@ class Context:
         """Create a child context carrying intercept metadata for *name*."""
         child = Context(self)
         child._fiber = self.fiber
+        child._isolation = dict(self._isolation)
+        child._intercept = dict(self._intercept)
         child._intercept[name] = metadata
         return child
 

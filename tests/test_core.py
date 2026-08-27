@@ -117,3 +117,26 @@ async def test_serial_short_circuit() -> None:
     assert result == "stop"
     assert seen == ["a"]
     await root.fiber.dispose()
+
+
+async def test_isolate_keeps_services_separate() -> None:
+    root = Context()
+    tenant_a = root.isolate("db", "a")
+    tenant_b = root.isolate("db", "b")
+
+    def provider(ctx: Context, config: dict) -> None:
+        ctx.provide("db", {"tenant": ctx._isolation["db"]})
+
+    await tenant_a.plugin(provider)
+    await tenant_b.plugin(provider)
+
+    seen: list[str] = []
+
+    def consumer(ctx: Context, config: dict) -> None:
+        seen.append(ctx.db["tenant"])
+
+    consumer.inject = ["db"]
+    await tenant_a.plugin(consumer)
+    assert seen == ["a"]
+
+    await root.fiber.dispose()

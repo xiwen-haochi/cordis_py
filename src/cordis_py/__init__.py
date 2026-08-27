@@ -14,6 +14,7 @@ from .errors import (
 )
 from .events import DispatchMode, EventsService
 from .fiber import Fiber, FiberState
+from .hmr import HMR
 from .loader import Entry, Loader
 from .registry import RegistryService
 from .service import Service, inject
@@ -29,6 +30,7 @@ __all__ = [
     "EventsService",
     "Fiber",
     "FiberState",
+    "HMR",
     "InactiveAccess",
     "InactiveEffect",
     "Inject",

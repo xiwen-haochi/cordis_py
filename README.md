@@ -13,6 +13,7 @@ Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotempo
 - **Per-realm 隔离**：`ctx.isolate(name, realm)` 可隔离同名服务。
 - **Intercept 配置拦截**：`ctx.intercept(name, config)` 沿上下文链合并服务级配置（祖先条目先应用、就近覆盖），插件 inject 声明中的非空配置自动并入，`Service.resolve_config()` 可读取合并结果。
 - **契约校验**：`Service.version` / `ctx.provide(version=)` 声明版本，`@require` 声明 PEP 440 版本约束或接口谓词（不满足时软等待，`fiber.unsatisfied` 可诊断）；插件 `Config` 属性支持 callable 与 pydantic（可选）配置校验。
+- **配置 overlay**：`internal/config` waterfall——插件 config 激活前经父链监听器改写（只对注册者的后代生效），配合 `deep_merge` 实现分层合并与租户派生；改写结果再进入 `Config` 校验。
 - **同步/异步双模式**：有运行事件循环时后台异步调度；无事件循环时生命周期内联驱动（`dispose_sync` / `restart_sync` / `update_sync`），遇到需要事件循环的操作抛出 `AsyncRequiredError`。
 - **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
 - **基础 HMR**：开发期针对单个 Loader Entry 的模块重载。
@@ -102,6 +103,24 @@ def consumer(ctx: Context, config: dict):
 ```
 
 配置校验：给插件挂 `Config` 属性（callable 校验/转换，或可选安装 pydantic 后用模型类）。
+
+### 配置 overlay / 租户派生
+
+插件配置在激活前经过 `internal/config` 瀑布链（先改写、后 `Config` 校验），监听器只对注册者的后代生效：
+
+```python
+from cordis_py import Context, deep_merge
+
+
+async def tenant_overlay(fiber, config, next):
+    tenant = fiber.ctx._isolation.get("tenant")   # 目标 fiber 的上下文标记
+    return deep_merge(await next(), {"tenant": tenant})
+
+
+root = Context()
+root.on("internal/config", tenant_overlay)        # 对后代插件全体生效
+root.plugin(some_plugin)                          # 其 config 自动叠加租户层
+```
 
 ## 文档
 

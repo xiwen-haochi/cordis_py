@@ -384,22 +384,72 @@ class Context:
     async def waterfall(self, event: str, *args: Any) -> Any:
         """将监听器组合成中间件链。
 
-        每个监听器接收 ``(*args, next)``；不调用 ``next`` 会否决后续链路。
+        每个监听器接收 ``(*args, next)``；不调用 ``next`` 会否决后续链路，
+        ``next()`` 无参时沿用当前参数。
         """
-        listeners = self._dispatch(event)
+        return await self._run_waterfall(self._dispatch(event), args)
 
+    async def _run_waterfall(self, listeners: list[Listener], args: tuple[Any, ...], fallback: Callable[..., Any] | None = None) -> Any:
+        """按注册顺序运行监听器中间件链；不调用 ``next`` 即短路。
+
+        *fallback* 在链尾 ``next()`` 时被调用（用于 internal/config 返回原始配置）。
+        """
         async def run(index: int, values: tuple[Any, ...]) -> Any:
             if index >= len(listeners):
-                return None
+                if fallback is None:
+                    return None
+                return await await_maybe(fallback(*values))
             listener = listeners[index]
 
             def next_fn(*next_args: Any) -> Any:
-                return run(index + 1, next_args)
+                # 无参调用 next() 时沿用当前参数，与 Node 中间件语义一致。
+                return run(index + 1, next_args if next_args else values)
 
             result = listener.handler(*values, next_fn)
             return await await_maybe(result)
 
         return await run(0, args)
+
+    # ------------------------------------------------------------------
+    # 配置 overlay
+    # ------------------------------------------------------------------
+
+    def _config_listeners_for(self, fiber: Fiber) -> list[Listener]:
+        """收集适用于目标 fiber 的 ``internal/config`` 监听器。
+
+        只包含注册者严格祖先（沿 ``parent_fiber`` 链）注册的监听器；
+        root 上注册的监听器对全体生效。兄弟分支互不干扰。
+        """
+        listeners = self._root._listeners.get("internal/config", [])
+
+        def applies(listener: Listener) -> bool:
+            owner = listener.owner
+            if owner.is_root:
+                return True
+            node = fiber.parent_fiber
+            while node is not None:
+                if node is owner:
+                    return True
+                node = node.parent_fiber
+            return False
+
+        return [listener for listener in listeners if applies(listener)]
+
+    async def _resolve_config_overlay(self, fiber: Fiber, config: Any) -> Any:
+        """应用 ``internal/config`` 瀑布链改写插件配置。
+
+        任何插件（含 ``update()`` 重载）激活前都经过这里：先 overlay 改写，
+        再进入 ``Config`` 校验（与 Node 版 Cordis 的顺序一致）。
+        """
+        listeners = self._config_listeners_for(fiber)
+        if not listeners:
+            return config
+        # 链尾 next() 返回原始配置文件（与 Node 的 waterfall(config, () => config) 一致）。
+        return await self._run_waterfall(
+            listeners,
+            (fiber, config),
+            fallback=lambda fiber, config: config,
+        )
 
     # ------------------------------------------------------------------
     # 作用域上下文

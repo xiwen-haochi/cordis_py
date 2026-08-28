@@ -22,7 +22,7 @@ from .hmr import HMR
 from .loader import Entry, Loader
 from .registry import RegistryService
 from .service import Service, inject, require
-from .utils import Disposable, Effect, Inject
+from .utils import Disposable, Effect, Inject, deep_merge
 
 __all__ = [
     "HMR",
@@ -48,6 +48,7 @@ __all__ = [
     "Service",
     "ServiceConflict",
     "UndeclaredAccess",
+    "deep_merge",
     "discover",
     "inject",
     "load_entry_points",

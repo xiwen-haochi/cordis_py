@@ -135,6 +135,25 @@ def merge_config(base: Any, override: Any) -> Any:
     return override
 
 
+def deep_merge(base: Any, override: Any) -> Any:
+    """递归深合并：*override* 优先。
+
+    两侧都是映射时递归合并嵌套映射；列表与标量整体替换；``None`` 表示
+    “无配置”会被跳过。用于配置 overlay 分层合并（见 ``internal/config``）。
+    """
+    if override is None:
+        return base
+    if isinstance(base, Mapping) and isinstance(override, Mapping):
+        merged: dict[Any, Any] = dict(base)
+        for key, value in override.items():
+            if key in merged:
+                merged[key] = deep_merge(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
+    return override
+
+
 def normalize_constraint(name: str, constraint: Any) -> Any:
     """规范化单个服务约束。
 

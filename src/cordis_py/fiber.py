@@ -207,7 +207,9 @@ class Fiber:
         return dispose
 
     async def _invoke_plugin(self) -> Any:
-        config = resolve_plugin_config(self.plugin, self.config)
+        # 先应用 internal/config 瀑布链（配置 overlay/租户派生），再进入 Config 校验。
+        config = await self.ctx._resolve_config_overlay(self, self.config)
+        config = resolve_plugin_config(self.plugin, config)
         plugin = self.plugin
         if plugin is None:
             return None

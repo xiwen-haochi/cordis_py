@@ -198,6 +198,7 @@ await client.close()
 - [介绍与实现思路（HTML）](docs/cordis_py_intro.html)
 - [应用领域与设计优化分析（HTML）](docs/cordis_py_domains_and_design.html)
 - [收官总结与路线图](docs/cordis_py_summary.md)
+- [示例应用解析（HTML）](docs/cordis_py_example.html)
 
 ## 参考
 

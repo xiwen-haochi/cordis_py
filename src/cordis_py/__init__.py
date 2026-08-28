@@ -49,4 +49,4 @@ __all__ = [
     "load_entry_points",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

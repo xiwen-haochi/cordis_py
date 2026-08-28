@@ -180,11 +180,18 @@ await client.close()
 
 帧协议为 JSON-lines：仅 JSON 兼容值；断连后调用抛 `RemoteClosed`，远端异常重建为 `RemoteError`。
 
+## 项目总结与路线图
+
+规划内的全部功能点（0.1.0 → 0.8.0）已完成：核心运行时 → 同步/异步双模式与 intercept → 契约校验 → 配置 overlay → HMR 依赖图分类 → HMR 文件监听 → 作用域隔离 → 跨进程 Bridge。总结与后续优化方向（P0 生态验证 / P1 质量 / P2 能力面 / P3 可维护）见：
+
+- [收官总结（markdown）](docs/cordis_py_summary.md)
+
 ## 文档
 
 - [开发流程](DEVELOPMENT.md)
 - [介绍与实现思路（HTML）](docs/cordis_py_intro.html)
 - [应用领域与设计优化分析（HTML）](docs/cordis_py_domains_and_design.html)
+- [收官总结与路线图](docs/cordis_py_summary.md)
 
 ## 参考
 

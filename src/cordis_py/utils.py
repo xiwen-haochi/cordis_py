@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
-from collections.abc import AsyncIterable, Callable, Iterable, Mapping
+from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Mapping
 from typing import Any, TypeVar
+
+from .errors import AsyncRequiredError
 
 T = TypeVar("T")
 
@@ -39,6 +42,56 @@ async def await_maybe(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def has_running_loop() -> bool:
+    """当前线程是否运行着事件循环。
+
+    这是同步/异步双模式的分流点：有运行中的事件循环时，生命周期转换
+    与异步效果走 ``asyncio`` 后台调度；否则走内联同步驱动。
+    """
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
+def drive_sync(awaitable: Awaitable[Any], where: str = "当前操作") -> None:
+    """在没有运行事件循环的线程中内联驱动一个协程。
+
+    同步模式的核心组件：被驱动对象必须是普通协程，且其内部等待链也必须
+    是纯协程（例如插件回调、异步效果收集器）。一旦协程挂起在需要事件循环
+    服务的等待点（如 ``asyncio.sleep``、``asyncio.create_task``），或者使用了
+    事件循环原语而抛出不带运行循环的 ``RuntimeError``，都会抛出
+    :class:`AsyncRequiredError`，提示调用方改用异步 API。
+    """
+    if not inspect.iscoroutine(awaitable):
+        raise AsyncRequiredError(where)
+    try:
+        awaitable.send(None)
+    except StopIteration:
+        return
+    except RuntimeError as exc:
+        awaitable.close()
+        if "no running event loop" in str(exc):
+            raise AsyncRequiredError(where) from exc
+        raise
+    # 协程挂起：说明有等待点需要事件循环服务。
+    awaitable.close()
+    raise AsyncRequiredError(where)
+
+
+def normalize_sync_error(error: BaseException, where: str) -> None:
+    """把同步模式收集到的事件循环相关错误转为 AsyncRequiredError 并抛出。
+
+    插件体内使用 ``asyncio.sleep`` 等原语时，异常发生在协程内部，会先被
+    fiber 记录为加载错误；在同步入口重新抛出前，用本函数给出清晰的
+    双模式边界提示。
+    """
+    if isinstance(error, RuntimeError) and "no running event loop" in str(error):
+        raise AsyncRequiredError(where) from error
+    raise error
 
 
 def resolve_inject(plugin: Any) -> dict[str, Any]:

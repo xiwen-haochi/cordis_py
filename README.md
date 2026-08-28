@@ -11,6 +11,7 @@ Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotempo
 - **事件系统**：`on` / `once` / `emit` / `parallel` / `serial` / `bail` / `waterfall`。
 - **Service 基类**：继承 `Service` 并调用 `super().__init__(ctx, name)` 自动注册服务。
 - **Per-realm 隔离**：`ctx.isolate(name, realm)` 可隔离同名服务。
+- **同步/异步双模式**：有运行事件循环时后台异步调度；无事件循环时生命周期内联驱动（`dispose_sync` / `restart_sync` / `update_sync`），遇到需要事件循环的操作抛出 `AsyncRequiredError`。
 - **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
 - **基础 HMR**：开发期针对单个 Loader Entry 的模块重载。
 
@@ -54,6 +55,27 @@ async def main():
 
 asyncio.run(main())
 ```
+
+### 同步模式
+
+没有运行事件循环时，生命周期转换会内联完成，配合 `dispose_sync` 等同步 API 使用：
+
+```python
+from cordis_py import Context, inject
+
+
+@inject("greeter")
+def greet_plugin(ctx: Context, config: dict):
+    print(ctx.greeter.hello("world"))
+
+
+root = Context()
+root.plugin(Greeter)
+root.plugin(greet_plugin)
+root.fiber.dispose_sync()
+```
+
+若同步调用链中遇到需要事件循环的操作（异步插件、异步效果、异步事件监听器），会抛出 `AsyncRequiredError`，提示改用异步 API。
 
 ## 文档
 

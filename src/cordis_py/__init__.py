@@ -5,6 +5,7 @@ from __future__ import annotations
 from .context import Context
 from .discovery import discover, load_entry_points
 from .errors import (
+    AsyncRequiredError,
     CordisError,
     InactiveAccess,
     InactiveEffect,
@@ -23,6 +24,7 @@ from .utils import Disposable, Effect, Inject
 
 __all__ = [
     "HMR",
+    "AsyncRequiredError",
     "Context",
     "CordisError",
     "DispatchMode",

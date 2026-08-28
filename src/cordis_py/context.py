@@ -8,9 +8,22 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import InactiveAccess, ServiceConflict, UndeclaredAccess
+from .errors import (
+    AsyncRequiredError,
+    InactiveAccess,
+    ServiceConflict,
+    UndeclaredAccess,
+)
 from .fiber import Fiber, FiberState
-from .utils import Disposable, Effect, Inject, await_maybe, resolve_inject
+from .utils import (
+    Disposable,
+    Effect,
+    Inject,
+    await_maybe,
+    has_running_loop,
+    normalize_sync_error,
+    resolve_inject,
+)
 
 
 @dataclass
@@ -221,6 +234,9 @@ class Context:
         fiber.parent_fiber = None if self.fiber.is_root else self.fiber
         self._root._fibers.append(fiber)
         fiber.refresh()
+        # 同步模式：加载内联完成，失败在此处立即向调用方抛出。
+        if not has_running_loop() and fiber.error is not None:
+            normalize_sync_error(fiber.error, f"插件 {fiber.name} 的加载")
         return fiber
 
     def inject(self, deps: Inject, callback: Callable[..., Any], config: Any = None) -> Fiber:
@@ -287,15 +303,25 @@ class Context:
         return listeners
 
     def emit(self, event: str, *args: Any) -> None:
-        """同步分发；异步监听器会被调度为任务。"""
+        """同步分发事件。
+
+        有运行事件循环时，异步监听器会被调度为后台任务；
+        无事件循环（同步模式）时只能执行同步监听器，若遇到异步监听器会抛出
+        :class:`AsyncRequiredError`，避免监听器代码被静默丢弃。
+        """
         for listener in self._dispatch(event):
             try:
                 result = listener.handler(*args)
-                if inspect.isawaitable(result):
-                    asyncio.create_task(result)
-            except Exception:
+            except Exception:  # noqa: BLE001, S112
                 # 单个监听器失败不应中断其他监听器。
                 continue
+            if not inspect.isawaitable(result):
+                continue
+            if has_running_loop():
+                asyncio.create_task(result)
+            else:
+                result.close()
+                raise AsyncRequiredError(f"事件 {event!r} 的异步监听器")
 
     async def parallel(self, event: str, *args: Any) -> None:
         """并发运行所有监听器并等待完成。"""
@@ -317,9 +343,15 @@ class Context:
         return None
 
     def bail(self, event: str, *args: Any) -> Any:
-        """同步运行监听器，直到其中一个返回短路值。"""
+        """同步运行监听器，直到其中一个返回短路值。
+
+        同步模式下无法执行异步监听器，遇到时抛出 :class:`AsyncRequiredError`。
+        """
         for listener in self._dispatch(event):
             result = listener.handler(*args)
+            if inspect.isawaitable(result):
+                result.close()
+                raise AsyncRequiredError(f"事件 {event!r} 的异步监听器")
             if result is not None and result is not False:
                 return result
         return None
@@ -405,6 +437,15 @@ class Context:
         """按加载顺序的逆序卸载所有插件 fiber。"""
         for fiber in reversed(list(self._root._fibers)):
             await fiber.dispose()
+
+    def dispose_all_sync(self) -> None:
+        """按加载顺序的逆序同步卸载所有插件 fiber。
+
+        仅在没有运行事件循环的同步调用链中使用；若任一 fiber 仍在异步加载中，
+        会抛出 :class:`AsyncRequiredError`。
+        """
+        for fiber in reversed(list(self._root._fibers)):
+            fiber.dispose_sync()
 
     def __repr__(self) -> str:
         return f"Context <{self.fiber.name}>"

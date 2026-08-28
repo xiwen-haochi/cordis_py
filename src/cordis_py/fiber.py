@@ -8,8 +8,15 @@ from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from .errors import InactiveEffect, InvalidEffect
-from .utils import Disposable, Effect, await_maybe
+from .errors import AsyncRequiredError, InactiveEffect, InvalidEffect
+from .utils import (
+    Disposable,
+    Effect,
+    await_maybe,
+    drive_sync,
+    has_running_loop,
+    normalize_sync_error,
+)
 
 if TYPE_CHECKING:
     from .context import Context
@@ -71,7 +78,7 @@ async def _run_disposers(disposers: list[Disposable]) -> None:
             result = disposer()
             if inspect.isawaitable(result):
                 await result
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             # 保证清理过程有韧性：单个 disposer 失败不能阻止其他清理。
             continue
 
@@ -137,12 +144,20 @@ class Fiber:
                 resolved = await result
                 holder.extend(await _collect_async_effect(resolved))
 
-            task = asyncio.create_task(consume_awaitable())
-
             async def dispose_async() -> None:
-                await task
                 await _run_disposers(holder)
 
+            if has_running_loop():
+                task = asyncio.create_task(consume_awaitable())
+
+                async def dispose_with_task() -> None:
+                    await task
+                    await _run_disposers(holder)
+
+                self._effects.append(dispose_with_task)
+                return dispose_with_task
+            # 同步模式：立即收集异步效果，保证后续卸载时序正确。
+            drive_sync(consume_awaitable(), f"fiber <{self.name}> 的异步效果收集")
             self._effects.append(dispose_async)
             return dispose_async
 
@@ -155,12 +170,20 @@ class Fiber:
                         raise InvalidEffect(item)
                     holder.append(item)
 
-            task = asyncio.create_task(consume_async_iter())
-
             async def dispose_async_iter() -> None:
-                await task
                 await _run_disposers(holder)
 
+            if has_running_loop():
+                task = asyncio.create_task(consume_async_iter())
+
+                async def dispose_with_task_iter() -> None:
+                    await task
+                    await _run_disposers(holder)
+
+                self._effects.append(dispose_with_task_iter)
+                return dispose_with_task_iter
+            # 同步模式：立即收集异步可迭代效果。
+            drive_sync(consume_async_iter(), f"fiber <{self.name}> 的异步效果迭代")
             self._effects.append(dispose_async_iter)
             return dispose_async_iter
 
@@ -219,14 +242,19 @@ class Fiber:
         return tuple(sorted(self.inject))
 
     def _schedule(self, coro: Awaitable[None]) -> None:
-        task = asyncio.create_task(coro)
-        self._inertia = task
+        """双模式调度：有事件循环时后台执行，否则内联同步驱动。"""
+        if has_running_loop():
+            task = asyncio.create_task(coro)
+            self._inertia = task
 
-        def _done(t: asyncio.Task[None]) -> None:
-            if self._inertia is t:
-                self._inertia = None
+            def _done(t: asyncio.Task[None]) -> None:
+                if self._inertia is t:
+                    self._inertia = None
 
-        task.add_done_callback(_done)
+            task.add_done_callback(_done)
+            return
+        # 同步模式：内联驱动，调用方返回时加载/卸载已完成。
+        drive_sync(coro, f"fiber <{self.name}> 的生命周期转换")
 
     def refresh(self) -> None:
         """重新计算依赖目标，并在需要时安排加载/卸载。"""
@@ -261,7 +289,7 @@ class Fiber:
             else:
                 self.target = None
                 await self._unload()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._error = exc
             self.committed = {}
             await self._unload()
@@ -314,18 +342,87 @@ class Fiber:
         await self._unload()
         self.ctx.root._remove_fiber(self)
 
+    @property
+    def error(self) -> Exception | None:
+        """最近的加载错误（如有）。"""
+        return self._error
+
+    def _assert_sync_context(self, action: str) -> None:
+        if has_running_loop():
+            raise AsyncRequiredError(f"fiber <{self.name}> 的{action}")
+
+    def dispose_sync(self) -> None:
+        """同步模式卸载：立即清理此 fiber、其子 fiber 与全部效果。
+
+        只在没有运行事件循环的同步调用链中使用；若 fiber 仍在异步加载中，
+        或清理过程需要事件循环服务，会抛出 :class:`AsyncRequiredError`。
+        """
+        if self.is_root:
+            self.ctx.dispose_all_sync()
+            return
+        if self._disposed:
+            return
+        self._assert_sync_context("卸载")
+        if self._inertia is not None:
+            raise AsyncRequiredError(f"fiber <{self.name}> 仍在异步加载中")
+        self._disposed = True
+        self.target = None
+        children = [
+            child
+            for child in list(self.ctx.root._fibers)
+            if child.parent_fiber is self
+        ]
+        for child in children:
+            child.dispose_sync()
+        drive_sync(self._unload(), f"fiber <{self.name}> 的卸载")
+        self.ctx.root._remove_fiber(self)
+
+    def restart_sync(self) -> None:
+        """同步模式重启：清理旧效果与旧服务后立即重新加载。"""
+        self.assert_active()
+        self._assert_sync_context("重启")
+        if self._inertia is not None:
+            raise AsyncRequiredError(f"fiber <{self.name}> 仍在异步加载中")
+        self.target = None
+        drive_sync(self._unload(), f"fiber <{self.name}> 的重启")
+        self.refresh()
+        self.check()
+
+    def update_sync(self, config: Any) -> None:
+        """同步模式应用新配置并重启 fiber。"""
+        self.assert_active()
+        self._assert_sync_context("配置更新")
+        if self._inertia is not None:
+            raise AsyncRequiredError(f"fiber <{self.name}> 仍在异步加载中")
+        self.config = config
+        self.target = None
+        drive_sync(self._unload(), f"fiber <{self.name}> 的配置更新")
+        self.refresh()
+        self.check()
+
+    def check(self) -> None:
+        """同步检查加载错误：存在失败时（规范化后）立即抛出。"""
+        if self._error is not None:
+            normalize_sync_error(self._error, f"fiber <{self.name}> 的加载")
+
     async def restart(self) -> None:
         """清理当前效果；若依赖仍满足则重新加载。"""
         self.assert_active()
+        if self._inertia is not None:
+            await self._inertia
         self.target = None
+        await self._unload()
         self.refresh()
         await self.wait()
 
     async def update(self, config: Any) -> None:
         """应用新配置并重启 fiber。"""
         self.assert_active()
+        if self._inertia is not None:
+            await self._inertia
         self.config = config
         self.target = None
+        await self._unload()
         self.refresh()
         await self.wait()
 

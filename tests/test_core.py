@@ -25,7 +25,6 @@ async def test_service_plugin_and_inject() -> None:
     def plugin(ctx: Context, config: dict) -> None:
         calls.append(ctx.greeter.hello("world"))
         ctx.on("app/ready", lambda msg: calls.append(f"event:{msg}"))
-        return None
 
     fiber = root.plugin(plugin)
     await fiber
@@ -75,7 +74,6 @@ async def test_effect_cleanup_lifo() -> None:
     def plugin(ctx: Context, config: dict) -> None:
         ctx.effect(lambda: (log.append("first"), lambda: log.append("undo-first"))[1])
         ctx.effect(lambda: (log.append("second"), lambda: log.append("undo-second"))[1])
-        return None
 
     fiber = root.plugin(plugin)
     await fiber
@@ -109,7 +107,6 @@ async def test_serial_short_circuit() -> None:
     def plugin(ctx: Context, config: dict) -> None:
         ctx.on("e", lambda *a: (seen.append("a"), "stop")[1])
         ctx.on("e", lambda *a: seen.append("b"))
-        return None
 
     fiber = root.plugin(plugin)
     await fiber
@@ -125,7 +122,6 @@ async def test_once_listener_fires_only_once() -> None:
 
     def plugin(ctx: Context, config: dict) -> None:
         ctx.once("ping", lambda: seen.append("pong"))
-        return None
 
     fiber = root.plugin(plugin)
     await fiber
@@ -150,7 +146,7 @@ async def test_parent_dispose_cascades_to_child() -> None:
 
     parent_fiber = root.plugin(parent)
     await parent_fiber
-    child_fiber = [f for f in root._fibers if f is not parent_fiber][0]
+    child_fiber = next(f for f in root._fibers if f is not parent_fiber)
     assert child_fiber.state.name == "ACTIVE"
 
     await parent_fiber.dispose()

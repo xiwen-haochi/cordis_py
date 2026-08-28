@@ -51,3 +51,18 @@ class InactiveEffect(CordisError):
 
     def __init__(self) -> None:
         super().__init__("INACTIVE_EFFECT", "cannot register an effect on an inactive fiber")
+
+
+class AsyncRequiredError(CordisError):
+    """同步模式下遇到需要事件循环的异步操作时抛出。
+
+    这是同步/异步双模式封装的边界错误：在没有运行事件循环的调用链中，
+    如果插件、效果或事件监听器需要事件循环服务（如 asyncio.sleep、
+    asyncio.create_task），同步驱动无法完成，会抛出该异常提示改用异步 API。
+    """
+
+    def __init__(self, where: str = "当前操作") -> None:
+        super().__init__(
+            "ASYNC_REQUIRED",
+            f"{where} requires an event loop; please run it under asyncio or use the async API",
+        )

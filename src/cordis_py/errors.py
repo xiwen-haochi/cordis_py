@@ -93,3 +93,29 @@ class ConfigValidationError(CordisError):
             "CONFIG_VALIDATION",
             f"invalid config for plugin {plugin!r}: {reason}",
         )
+
+
+class RemoteError(CordisError):
+    """远端桥接调用失败时重新构建的异常。
+
+    携带原始异常类型名与消息（可选堆栈），便于跨进程保留错误语义。
+    """
+
+    def __init__(self, name: str, message: str, stack: str | None = None) -> None:
+        self.name = name
+        self.stack = stack
+        super().__init__("REMOTE_ERROR", f"{name}: {message}")
+
+
+class RemoteClosed(CordisError):
+    """桥接断开后仍尝试调用代理或等待结果时抛出。"""
+
+    def __init__(self, where: str = "远程调用") -> None:
+        super().__init__("REMOTE_CLOSED", f"{where} failed: bridge is closed")
+
+
+class ProtocolError(CordisError):
+    """桥接帧协议不兼容或损坏时抛出。"""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__("BRIDGE_PROTOCOL", reason)

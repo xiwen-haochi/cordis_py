@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .bridge import Bridge, RemoteService
 from .context import Context
 from .depgraph import Classification, ModuleGraph
 from .discovery import discover, load_entry_points
@@ -14,6 +15,9 @@ from .errors import (
     InvalidEffect,
     InvalidPlugin,
     InvalidRequirement,
+    ProtocolError,
+    RemoteClosed,
+    RemoteError,
     ServiceConflict,
     UndeclaredAccess,
 )
@@ -30,6 +34,7 @@ from .watcher import HMRWatcher
 __all__ = [
     "HMR",
     "AsyncRequiredError",
+    "Bridge",
     "Classification",
     "ConfigValidationError",
     "Context",
@@ -50,7 +55,11 @@ __all__ = [
     "InvalidRequirement",
     "Loader",
     "ModuleGraph",
+    "ProtocolError",
     "RegistryService",
+    "RemoteClosed",
+    "RemoteError",
+    "RemoteService",
     "Scope",
     "Service",
     "ServiceConflict",

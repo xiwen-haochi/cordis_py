@@ -18,6 +18,7 @@ Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotempo
 - **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
 - **HMR 依赖图分类**：追踪模块导入边（运行时追踪 + AST 补全），对变更模块计算 accepted/declined 分类，自动找出并事务式重载受影响条目（`reload_file` / `reload_module` / `reload_entry`），失败时回滚到旧代码与旧插件；`HMR.watch()` 监听源码目录自动触发（可选依赖 watchdog）。
 - **作用域隔离**：`Context.filtered()` 监听器过滤 + `create_scope` / `scope_target` 作用域路由——不可信插件的监听器对可信派发不可见（事件只向上流，不向下），`global_` 监听器显式放行；服务侧由 `isolate` / realm 隔离。
+- **跨进程 Bridge**：JSON-lines 帧协议（TCP/Unix socket）、`expose` / `proxy` 远程服务、事件双向贯通；断连后调用抛 `RemoteClosed`，远端异常重建为 `RemoteError`（仅 JSON 兼容值，跨进程调用为异步 IO）。
 
 ## 安装
 
@@ -158,6 +159,26 @@ await untrusted.dispose()
 ```
 
 这是**协调式**隔离（Cordis 语义：事件与服务可见性边界），不是恶意代码的真实安全边界；OS 级资源沙箱（子解释器 / subprocess / 文件系统限制）属宿主职责。
+
+### 跨进程 Bridge / 远程服务
+
+远端进程暴露服务，本地进程像调用本地插件一样**异步**调用；事件双向贯通：
+
+```python
+# 远端（服务端）
+from cordis_py import Bridge, Context
+
+server, addr = await Bridge.serve()
+server.expose(root, "calc", Calculator())       # 随 fiber dispose 自动反注册
+
+# 本地（客户端）
+client = await Bridge.connect(addr)
+result = await client.proxy("calc").add(1, 2)   # 异步远程调用
+client.send_event("notice", "hello")            # 事件贯通（fire-and-forget）
+await client.close()
+```
+
+帧协议为 JSON-lines：仅 JSON 兼容值；断连后调用抛 `RemoteClosed`，远端异常重建为 `RemoteError`。
 
 ## 文档
 

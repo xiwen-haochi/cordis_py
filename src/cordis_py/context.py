@@ -433,13 +433,21 @@ class Context:
                 return result
         return None
 
-    async def waterfall(self, event: str, *args: Any, receiver: Any | None = None) -> Any:
+    async def waterfall(
+        self,
+        event: str,
+        *args: Any,
+        receiver: Any | None = None,
+        fallback: Callable[..., Any] | None = None,
+    ) -> Any:
         """将监听器组合成中间件链。
 
         每个监听器接收 ``(*args, next)``；不调用 ``next`` 会否决后续链路，
-        ``next()`` 无参时沿用当前参数。
+        ``next()`` 无参时沿用当前参数。*fallback* 作为链尾（对齐 Node
+        ``waterfall`` 把最终回调视为最内层 next 的语义，如 HTTP 中间件的
+        真实处理函数）。
         """
-        return await self._run_waterfall(self._dispatch(event, receiver), args)
+        return await self._run_waterfall(self._dispatch(event, receiver), args, fallback)
 
     async def _run_waterfall(self, listeners: list[Listener], args: tuple[Any, ...], fallback: Callable[..., Any] | None = None) -> Any:
         """按注册顺序运行监听器中间件链；不调用 ``next`` 即短路。

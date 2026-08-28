@@ -49,8 +49,14 @@ class EventsService:
     def bail(self, event: str, *args: Any, receiver: Any | None = None) -> Any:
         return self.ctx.bail(event, *args, receiver=receiver)
 
-    async def waterfall(self, event: str, *args: Any, receiver: Any | None = None) -> Any:
-        return await self.ctx.waterfall(event, *args, receiver=receiver)
+    async def waterfall(
+        self,
+        event: str,
+        *args: Any,
+        receiver: Any | None = None,
+        fallback: Callable[..., Any] | None = None,
+    ) -> Any:
+        return await self.ctx.waterfall(event, *args, receiver=receiver, fallback=fallback)
 
 
 __all__ = ["DispatchMode", "EventsService"]

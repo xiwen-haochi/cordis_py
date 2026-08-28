@@ -160,6 +160,13 @@ def _watchdog_backend(roots: Sequence[str], recursive: bool, notify: Callable[..
                 return
             notify("created", event.src_path)
 
+        def on_moved(self, event: Any) -> None:
+            # 编辑器的原子保存（临时文件 + rename）不产生 modified/create，
+            # 只有 moved 事件：以目标路径视为一次“新建”（v2 语义）。
+            if event.is_directory:
+                return
+            notify("created", event.dest_path)
+
     observer = Observer()
     handler = _Handler()
     for root in roots:

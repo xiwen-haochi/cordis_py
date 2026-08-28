@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -242,6 +243,38 @@ async def test_watchdog_backend_smoke(tmp_path: Path, monkeypatch: pytest.Monkey
     try:
         data_file.write_text("VALUE = 'v2'\n", encoding="utf-8")
         # 真实文件系统事件有一定延迟：轮询等待。
+        await _wait_for(lambda: root.services.get("value") == "v2", timeout=6.0)
+    finally:
+        await watcher.stop()
+        hmr.dispose()
+        await loader.dispose()
+        await root.fiber.dispose()
+
+
+@pytest.mark.asyncio
+async def test_watchdog_backend_atomic_replace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """编辑器原子保存（临时文件 + rename）经 moved 事件触发重载。"""
+    pytest.importorskip("watchdog")
+    data_file = tmp_path / "wb_data.py"
+    plugin_file = tmp_path / "wb_plugin.py"
+    _write_fixture(tmp_path, data_file, plugin_file, "v1")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    _unload(monkeypatch, "wb_counts", "wb_data", "wb_plugin")
+
+    root = Context()
+    loader = Loader(root)
+    await loader.reconcile([{"id": "wb", "url": "wb_plugin:plugin", "config": {}}])
+
+    hmr = HMR(loader)
+    watcher = HMRWatcher(hmr, roots=[str(tmp_path)], debounce=0.05)
+    watcher.start()
+    try:
+        staging = tmp_path / "wb_data.py.tmp"
+        staging.write_text("VALUE = 'v2'\n", encoding="utf-8")
+        # 原子替换：write + rename（与 sed -i / 编辑器保存同构）。
+        os.replace(staging, data_file)
         await _wait_for(lambda: root.services.get("value") == "v2", timeout=6.0)
     finally:
         await watcher.stop()

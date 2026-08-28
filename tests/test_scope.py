@@ -76,6 +76,32 @@ async def test_filter_inherited_by_descendants() -> None:
     assert scope_of(b) is None
 
 
+async def test_waterfall_fallback_tail() -> None:
+    """链尾 fallback：对齐 Node waterfall 的最内层 next（中间件语义）。"""
+    root = Context()
+    seen: list[str] = []
+
+    async def middleware(tenant: str, request: dict, next_: Any) -> Any:
+        seen.append(tenant)
+        return await next_()
+
+    def quota(tenant: str, request: dict, next_: Any) -> Any:
+        return {"status": 429, "tenant": tenant}
+
+    root.on("http/request", middleware)
+    result = await root.waterfall(
+        "http/request", "acme", {"path": "/x"}, fallback=lambda *args: f"handled:{args}"
+    )
+    assert seen == ["acme"]
+    assert result == "handled:('acme', {'path': '/x'})"
+
+    root.on("http/request", quota)
+    result = await root.waterfall(
+        "http/request", "acme", {"path": "/x"}, fallback=lambda *args: "handled"
+    )
+    assert result == {"status": 429, "tenant": "acme"}
+
+
 async def test_scope_routes_upward_only() -> None:
     root = Context()
     heard: list[str] = []

@@ -7,7 +7,7 @@ dist/
 build/
 *.egg-info/
 .DS_Store
-paper.pdf
+*.pdf
 .pypi-token
 
 # AI 生成的开发文档（设计/计划/总结页）仅本地保留，不参与发布

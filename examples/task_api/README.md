@@ -40,8 +40,8 @@ cd examples/task_api
 python -m venv .venv && source .venv/bin/activate  # 或使用项目环境
 pip install -r requirements.txt
 
-uvicorn main:app --port 8000            # 正常启动
-python main.py --port 8000 --watch      # 带 HMR（插件源码热替换，不重启进程）
+python main.py --port 8000             # 启动即启用 HMR（插件源码热替换，不重启；依赖见 requirements.txt）
+python main.py --port 8000 --watch      # 显式开启（与默认一致）
 ```
 
 ## 验证

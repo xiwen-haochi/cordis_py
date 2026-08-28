@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import sys
+
 import argparse
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 
-from cordis_py import HMR, Context, Loader
-
 BASE = Path(__file__).resolve().parent
+
+sys.path.append(str(BASE / "src"))
+
+from cordis_py import HMR, Context, Loader
 
 
 @asynccontextmanager
@@ -50,7 +54,9 @@ def make_app(watch: bool = False) -> FastAPI:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Cordis 插件化任务 API 案例")
-    parser.add_argument("--watch", action="store_true", help="启用 HMR 插件源码热替换")
+    parser.add_argument(
+        "--watch", action="store_true", default=True, help="启用 HMR 插件源码热替换"
+    )
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 

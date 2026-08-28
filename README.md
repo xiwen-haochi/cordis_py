@@ -1,31 +1,38 @@
 # cordis_py
 
-Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotemporal composability）元框架。
+**Cordis 的 Python 实现**：面向动态系统的时空可组合性（spatiotemporal composability）元框架——把“装上的东西都能拆下来、依赖变化自动联动、能力可以声明式组合”变成可用的 Python 动态组合框架。
 
-## 当前已实现
+## 原理（30 秒版）
 
-- **Context / Fiber**：插件运行时实例、生命周期状态机、依赖驱动的自动加载/卸载。
-- **Effect 追踪**：`ctx.effect()` 支持 disposer、同步/异步 iterable，卸载时 LIFO 清理。
-- **服务与依赖注入**：`ctx.provide()`、`ctx.get()`、`ctx.set()`、`inject` 声明。
-- **响应式依赖**：先加载消费者再加载提供者也能自动激活；提供者卸载后消费者自动退出。
-- **事件系统**：`on` / `once` / `emit` / `parallel` / `serial` / `bail` / `waterfall`。
-- **Service 基类**：继承 `Service` 并调用 `super().__init__(ctx, name)` 自动注册服务。
-- **Per-realm 隔离**：`ctx.isolate(name, realm)` 可隔离同名服务。
-- **Intercept 配置拦截**：`ctx.intercept(name, config)` 沿上下文链合并服务级配置（祖先条目先应用、就近覆盖），插件 inject 声明中的非空配置自动并入，`Service.resolve_config()` 可读取合并结果。
-- **契约校验**：`Service.version` / `ctx.provide(version=)` 声明版本，`@require` 声明 PEP 440 版本约束或接口谓词（不满足时软等待，`fiber.unsatisfied` 可诊断）；插件 `Config` 属性支持 callable 与 pydantic（可选）配置校验。
-- **配置 overlay**：`internal/config` waterfall——插件 config 激活前经父链监听器改写（只对注册者的后代生效），配合 `deep_merge` 实现分层合并与租户派生；改写结果再进入 `Config` 校验。
-- **同步/异步双模式**：有运行事件循环时后台异步调度；无事件循环时生命周期内联驱动（`dispose_sync` / `restart_sync` / `update_sync`），遇到需要事件循环的操作抛出 `AsyncRequiredError`。
-- **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
-- **HMR 依赖图分类**：追踪模块导入边（运行时追踪 + AST 补全），对变更模块计算 accepted/declined 分类，自动找出并事务式重载受影响条目（`reload_file` / `reload_module` / `reload_entry`），失败时回滚到旧代码与旧插件；`HMR.watch()` 监听源码目录自动触发（可选依赖 watchdog）。
-- **作用域隔离**：`Context.filtered()` 监听器过滤 + `create_scope` / `scope_target` 作用域路由——不可信插件的监听器对可信派发不可见（事件只向上流，不向下），`global_` 监听器显式放行；服务侧由 `isolate` / realm 隔离。
-- **跨进程 Bridge**：JSON-lines 帧协议（TCP/Unix socket）、`expose` / `proxy` 远程服务、事件双向贯通；断连后调用抛 `RemoteClosed`，远端异常重建为 `RemoteError`（仅 JSON 兼容值，跨进程调用为异步 IO）。
+```text
+                ┌────────────────────────────────────────────┐
+  宿主        │  Context（根容器）                          │
+ (main.py)    │   ├── Fiber：插件运行实例 + 生命周期状态机    │
+   │          │   ├── 服务：provide / get / inject（realm 隔离）│
+   │          │   ├── 事件：on / emit / parallel / waterfall │
+   │          │   └── 效果：一切注册都可逆（LIFO 回收）       │
+   │ 注入/装配  └──────────────┬─────────────────────────────┘
+   ▼                           │ 声明式装配
+  Loader ── 配置文件(JSON/YAML/TOML) ──> 插件列表（url + config）
+                     │
+                     ▼
+               每个插件 = 一段代码 + 一份配置：
+               - 提供服务（供别的插件消费）
+               - 监听事件 / 组装中间件链（waterfall）
+               - 注册路由、资源等一切“装上去”的东西
+```
+
+三句话讲清楚：
+
+1. **应用 = 插件集合**：能力（服务、路由、中间件、任务）都是插件；`Loader` 从一份配置文件声明式装配，新增能力 = 加一行配置。
+2. **一切可逆**：插件运行在 Fiber 里，注册的一切（服务、事件监听、路由、定时任务）随 Fiber 卸载自动回收（LIFO）——不会“改了一半”的应用状态。
+3. **依赖响应式**：先装消费者后装提供者也能自动激活；提供者卸载后消费者自动退出。装配顺序无关。
 
 ## 安装
 
-PyPI 发布名为 `cordis-python`，Python 导入名仍为 `cordis_py`：
-
 ```bash
-pip install cordis-python
+pip install cordis-python          # PyPI 发布名；导入名 cordis_py
+pip install cordis-python[watch]   # 附加 HMR 文件监听（watchdog）
 ```
 
 ## 快速开始
@@ -35,7 +42,7 @@ import asyncio
 from cordis_py import Context, Service, inject
 
 
-class Greeter(Service):
+class Greeter(Service):                 # 1. 服务：能力的最小单元
     def __init__(self, ctx: Context):
         super().__init__(ctx, "greeter")
 
@@ -43,164 +50,51 @@ class Greeter(Service):
         return f"Hello, {name}!"
 
 
-@inject("greeter")
+@inject("greeter")                      # 2. 插件：声明依赖的消费者
 def greeter_plugin(ctx: Context, config: dict):
     ctx.on("app/ready", lambda msg: print(ctx.greeter.hello(msg)))
     return None
 
 
 async def main():
-    root = Context()
-    await root.plugin(Greeter)
-    await root.plugin(greeter_plugin)
-
-    root.emit("app/ready", "Cordis")
-    await root.fiber.dispose()
+    root = Context()                    # 3. 根容器
+    await root.plugin(Greeter)          #    装服务（可逆）
+    await root.plugin(greeter_plugin)   #    装插件（可逆；顺序颠倒也能自动激活）
+    root.emit("app/ready", "Cordis")    # 4. 事件
+    await root.fiber.dispose()          # 5. 全部回收（LIFO，无残留）
 
 
 asyncio.run(main())
 ```
 
-### 同步模式
+没有事件循环时用同步模式：`root.fiber.dispose_sync()`（其余转换用 `restart_sync` / `update_sync`；需要事件循环的操作会抛 `AsyncRequiredError`）。
 
-没有运行事件循环时，生命周期转换会内联完成，配合 `dispose_sync` 等同步 API 使用：
+## 能力速查
 
-```python
-from cordis_py import Context, inject
+| 想做什么 | 用什么 | 说明 |
+| --- | --- | --- |
+| 能力可插拔、可拆除 | `ctx.provide()` / `ctx.effect()` / `Fiber.dispose()` | 可逆副作用是全部语义的底座 |
+| 声明式装配应用 | `Loader.include("app.yml")` → `reconcile / disable / enable` | 配置文件即架构图 |
+| 依赖升级护栏 | `Service.version` + `@require("svc", ">=1.0")` | 版本/接口契约，不满足=软等待 |
+| 中间件 / 拦截链 | `ctx.on("http/request", handler)` + `waterfall(..., fallback=call_next)` | 不调用 `next()` 即拦截（限流/鉴权） |
+| 多租户 | `ctx.isolate("tasks", tenant)` + `internal/config` overlay | realm 服务隔离 + 租户配置派生 |
+| 不可信插件边界 | `Context.filtered()` / `create_scope` / `scope_target` | 事件的协调式可见性隔离 |
+| 跨进程服务 | `Bridge.serve/connect` + `expose/proxy` | JSON-lines 帧协议，事件双向贯通 |
+| 开发期热替换 | `HMR(loader)` + `watch([...])` | 依赖图分类 + 事务式重载，失败自动回滚 |
+| 插件自动发现 | `discover()` / `load_entry_points()` | Python 包入口点（插件市场形态） |
 
+## 生产案例
 
-@inject("greeter")
-def greet_plugin(ctx: Context, config: dict):
-    print(ctx.greeter.hello("world"))
+[examples/task_api](examples/task_api/README.md) —— **插件化多租户任务 API（FastAPI）**：9 个插件、`app.yml` 声明装配、请求瀑布链中间件、per-realm 租户数据隔离、契约校验、限流/审计/指标、HMR 热替换（改插件源码不重启进程，支持编辑器原子保存）。带集成测试与实测 curl 序列。
 
+## 质量与边界
 
-root = Context()
-root.plugin(Greeter)
-root.plugin(greet_plugin)
-root.fiber.dispose_sync()
-```
-
-若同步调用链中遇到需要事件循环的操作（异步插件、异步效果、异步事件监听器），会抛出 `AsyncRequiredError`，提示改用异步 API。
-
-### 契约校验
-
-提供方声明版本，消费方用 `@require` 声明约束；约束不满足时消费者保持等待（软等待），提供方变化后自动重新评估：
-
-```python
-from cordis_py import Context, Service, inject, require
-
-
-class Model(Service):
-    version = "1.0.0"
-
-    def __init__(self, ctx):
-        super().__init__(ctx, "model")
-
-
-@inject("model")
-@require("model", ">=1.0,<2.0")                    # PEP 440 版本约束
-@require("model", lambda svc: hasattr(svc, "hello"))  # 接口谓词
-def consumer(ctx: Context, config: dict):
-    print(ctx.model)
-```
-
-配置校验：给插件挂 `Config` 属性（callable 校验/转换，或可选安装 pydantic 后用模型类）。
-
-### 配置 overlay / 租户派生
-
-插件配置在激活前经过 `internal/config` 瀑布链（先改写、后 `Config` 校验），监听器只对注册者的后代生效：
-
-```python
-from cordis_py import Context, deep_merge
-
-
-async def tenant_overlay(fiber, config, next):
-    tenant = fiber.ctx._isolation.get("tenant")   # 目标 fiber 的上下文标记
-    return deep_merge(await next(), {"tenant": tenant})
-
-
-root = Context()
-root.on("internal/config", tenant_overlay)        # 对后代插件全体生效
-root.plugin(some_plugin)                          # 其 config 自动叠加租户层
-```
-
-### HMR 热重载
-
-开发期修改插件或共享依赖的源码后，只重载实际受影响的条目；也可监听源码目录自动触发：
-
-```python
-from cordis_py import HMR
-
-hmr = HMR(loader)                              # 启用模块依赖图追踪
-watcher = hmr.watch(["src"])                   # 监听源码目录，保存文件后自动重载
-await hmr.reload_file("src/plugins/worker.py")  # 或手动触发：变更文件 → 事务式重载
-await hmr.reload_module("myapp.helpers")        # 或按模块名
-await watcher.stop()
-hmr.dispose()                                  # 退出时卸载追踪器
-```
-
-文件监听依赖 watchdog（`pip install cordis-python[watch]`）；不安装时 `HMR` 核心与手动触发不受影响。
-
-### 作用域隔离（协调式边界）
-
-不可信插件的监听器对“可信接收者”派发默认不可见；事件只向上流，不向下：
-
-```python
-from cordis_py import Context, create_scope, scope_target
-
-root = Context()
-untrusted = create_scope(root, "market/plugin-x")
-trusted = create_scope(root, "trusted/area")
-
-untrusted.ctx.on("cloud/update", on_event)   # 恶意监听：可信派发时被过滤
-root.emit("cloud/update", "1", receiver=scope_target(root, "trusted/area"))
-
-await untrusted.dispose()
-```
-
-这是**协调式**隔离（Cordis 语义：事件与服务可见性边界），不是恶意代码的真实安全边界；OS 级资源沙箱（子解释器 / subprocess / 文件系统限制）属宿主职责。
-
-### 跨进程 Bridge / 远程服务
-
-远端进程暴露服务，本地进程像调用本地插件一样**异步**调用；事件双向贯通：
-
-```python
-# 远端（服务端）
-from cordis_py import Bridge, Context
-
-server, addr = await Bridge.serve()
-server.expose(root, "calc", Calculator())       # 随 fiber dispose 自动反注册
-
-# 本地（客户端）
-client = await Bridge.connect(addr)
-result = await client.proxy("calc").add(1, 2)   # 异步远程调用
-client.send_event("notice", "hello")            # 事件贯通（fire-and-forget）
-await client.close()
-```
-
-帧协议为 JSON-lines：仅 JSON 兼容值；断连后调用抛 `RemoteClosed`，远端异常重建为 `RemoteError`。
-
-## 示例应用
-
-- [插件化多租户任务 API（FastAPI）](examples/task_api/README.md)：Loader 声明装配
-  9 个插件、请求瀑布链中间件、per-realm 租户隔离、契约校验、限流/审计/指标、
-  HMR 热替换——接近生产的完整案例。
-
-## 项目总结与路线图
-
-规划内的全部功能点（0.1.0 → 0.8.0）已完成：核心运行时 → 同步/异步双模式与 intercept → 契约校验 → 配置 overlay → HMR 依赖图分类 → HMR 文件监听 → 作用域隔离 → 跨进程 Bridge。总结与后续优化方向（P0 生态验证 / P1 质量 / P2 能力面 / P3 可维护）见：
-
-- [收官总结（markdown）](docs/cordis_py_summary.md)
-
-## 文档
-
-- [开发流程](DEVELOPMENT.md)
-- [介绍与实现思路（HTML）](docs/cordis_py_intro.html)
-- [应用领域与设计优化分析（HTML）](docs/cordis_py_domains_and_design.html)
-- [收官总结与路线图](docs/cordis_py_summary.md)
-- [示例应用解析（HTML）](docs/cordis_py_example.html)
+- **验证**：100+ 单元/集成测试（生命周期、事件、契约、HMR 依赖图、作用域路由、Bridge 协议、watcher 原子保存）；ruff 全绿；`py.typed` 随包发布。
+- **可选依赖**：PyYAML / watch / pydantic 均为 extra，核心零第三方运行时依赖（仅 `packaging` 用于版本约束）。
+- **诚实边界**：作用域隔离是协调式（事件/服务可见性），**不是**恶意代码的安全边界（OS 级沙箱属宿主职责）；Bridge 无认证/加密层，限受信内网；跨进程调用仅 JSON 兼容值；HMR 仅纯 Python 源码模块。
+- **版本**：0.x 阶段，API 按语义化演进；重大变更会在 changelog 说明（当前 `0.9.0`）。
 
 ## 参考
 
 - 论文：*A Programming Paradigm for Spatiotemporal Composability*
-- Node.js 版：Cordis v4 / DeepSeek Harness vendor
+- Node.js 版：Cordis v4 / DeepSeek Harness vendor（本实现完全以其语义为基准，不参考其他 Python Cordis 实现）

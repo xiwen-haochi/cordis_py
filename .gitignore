@@ -9,3 +9,7 @@ build/
 .DS_Store
 paper.pdf
 .pypi-token
+
+# AI 生成的开发文档（设计/计划/总结页）仅本地保留，不参与发布
+docs/
+DEVELOPMENT.md

@@ -21,6 +21,7 @@ from .utils import (
     Inject,
     await_maybe,
     has_running_loop,
+    merge_config,
     normalize_sync_error,
     resolve_inject,
 )
@@ -215,7 +216,7 @@ class Context:
         child = Context(self)
         child._fiber = fiber
         child._isolation = dict(self._isolation)
-        child._intercept = dict(self._intercept)
+        # intercept 采用逐节点存储，合并时沿 _parent 链回溯（见 intercept_config）。
         return child
 
     def plugin(self, plugin: Any, config: Any = None) -> Fiber:
@@ -231,6 +232,9 @@ class Context:
             uid=self._next_uid(),
         )
         fiber.ctx = self._make_plugin_context(fiber)
+        # 插件在 inject 中声明的非空配置进入其上下文的拦截链（与 Node 版一致）：
+        # 该插件提供的服务可以经由 resolve_config 读取合并后的配置。
+        fiber.ctx._intercept = {name: cfg for name, cfg in inject.items() if cfg is not None}
         fiber.parent_fiber = None if self.fiber.is_root else self.fiber
         self._root._fibers.append(fiber)
         fiber.refresh()
@@ -393,13 +397,35 @@ class Context:
         return child
 
     def intercept(self, name: str, metadata: Any) -> Context:
-        """创建携带 *name* 拦截元数据的子上下文。"""
+        """创建携带 *name* 拦截配置的子上下文。
+
+        拦截配置只影响服务配置的解析（见 :meth:`intercept_config`），不改变
+        服务查找与依赖响应：该服务在注入语义上仍然与父作用域一致。
+        祖先条目先应用，越靠近当前上下文的条目优先级越高。
+        """
         child = Context(self)
         child._fiber = self.fiber
         child._isolation = dict(self._isolation)
-        child._intercept = dict(self._intercept)
-        child._intercept[name] = metadata
+        child._intercept = {name: metadata}
         return child
+
+    def intercept_config(self, name: str) -> Any:
+        """返回沿祖先链为 *name* 合并后的拦截配置。
+
+        从根向叶子合并：祖先条目先应用，越靠近当前上下文的条目优先级越高
+        （与 Node 版 Cordis 的 ``resolveConfig`` 语义一致）。条目为映射时浅合并，
+        非映射条目整体替换；没有任何条目时返回 ``None``。
+        """
+        entries: list[Any] = []
+        node: Context | None = self
+        while node is not None:
+            if name in node._intercept:
+                entries.append(node._intercept[name])
+            node = node._parent
+        merged: Any = None
+        for entry in reversed(entries):
+            merged = merge_config(merged, entry)
+        return merged
 
     # ------------------------------------------------------------------
     # 属性访问

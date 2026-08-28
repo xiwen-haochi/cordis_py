@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar, overload
 
+from .utils import merge_config
+
 T = TypeVar("T")
 
 
@@ -20,6 +22,20 @@ class Service:
         self.ctx = ctx
         self.name = name or self.provide or type(self).__name__.lower()
         ctx.provide(self.name, self)
+
+    def resolve_config(self, base: Any = None, head: Any = None) -> Any:
+        """合并本服务名上的拦截配置。
+
+        优先级从低到高：``base`` < 祖先上下文的 ``intercept()`` 条目 < 当前上下文条目
+        < ``head``。与 Node 版 Cordis 的 ``Service[symbols.resolveConfig]`` 语义对齐：
+        条目为映射时浅合并，非映射条目整体替换；没有任何配置时返回 ``None``。
+        """
+        merged = self.ctx.intercept_config(self.name)
+        if base is not None:
+            merged = merge_config(base, merged)
+        if head is not None:
+            merged = merge_config(merged, head)
+        return merged
 
 
 def _attach_inject(target: Any, deps: list[str] | Mapping[str, Any]) -> Any:

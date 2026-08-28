@@ -118,3 +118,18 @@ def collect_disposers(effect: Effect) -> list[Disposable]:
     if isinstance(effect, Iterable) and not isinstance(effect, (str, bytes)):
         return [item for item in effect if callable(item)]
     return []
+
+
+def merge_config(base: Any, override: Any) -> Any:
+    """合并两层配置：*override* 优先。
+
+    两侧都是映射时做浅合并，否则整体替换。``None`` 表示“无配置”，会被跳过；
+    该语义用于实现 intercept 配置链（见 :meth:`Context.intercept_config`）。
+    """
+    if override is None:
+        return base
+    if base is None:
+        return override
+    if isinstance(base, Mapping) and isinstance(override, Mapping):
+        return {**base, **override}
+    return override

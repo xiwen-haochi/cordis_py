@@ -24,6 +24,7 @@ from .loader import Entry, Loader
 from .registry import RegistryService
 from .service import Service, inject, require
 from .utils import Disposable, Effect, Inject, deep_merge
+from .watcher import HMRWatcher
 
 __all__ = [
     "HMR",
@@ -39,6 +40,7 @@ __all__ = [
     "EventsService",
     "Fiber",
     "FiberState",
+    "HMRWatcher",
     "InactiveAccess",
     "InactiveEffect",
     "Inject",

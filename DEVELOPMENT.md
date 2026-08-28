@@ -62,6 +62,7 @@ cordis_py/
 │       ├── loader.py              # 声明式加载器
 │       ├── depgraph.py            # 模块依赖图与 HMR 分类
 │       ├── hmr.py                 # 开发期事务式热重载
+│       ├── watcher.py             # 文件监听器（watchdog 可选依赖）
 │       ├── discovery.py           # Python entry points 插件发现
 │       ├── errors.py              # 异常定义
 │       └── utils.py               # 公共工具
@@ -147,7 +148,7 @@ git commit -m "feat: 增加声明式加载器"
   - 清理顺序与资源回收
   - 事件分发
   - Loader 增删改
-  - HMR 依赖图分类与事务式重载
+  - HMR 依赖图分类、事务式重载与文件监听
 
 ---
 
@@ -167,7 +168,6 @@ git commit -m "feat: 增加声明式加载器"
 
 - 跨进程 Bridge / 远程服务
 - 沙箱与不可信插件隔离
-- HMR 文件监听器与 watcher 集成
 
 ---
 

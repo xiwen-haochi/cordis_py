@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 import sys
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -155,6 +156,33 @@ class HMR:
         self._disposed = True
         if self._owns_graph:
             self._graph.uninstall()
+
+    def watch(
+        self,
+        roots: Sequence[str | Path] = (".",),
+        *,
+        ignored: Sequence[str] | None = None,
+        debounce: float = 0.1,
+        recursive: bool = True,
+        backend: Any | None = None,
+        on_error: Callable[[str, Exception], None] | None = None,
+    ) -> Any:
+        """启动文件监听器，把源码变更自动接入热重载。
+
+        需要运行中的事件循环（watchdog 在独立线程观察，事件桥接回 asyncio）。
+        未安装 watchdog 时抛出带安装提示的 ImportError。
+        """
+        from .watcher import DEFAULT_IGNORED, HMRWatcher
+
+        return HMRWatcher(
+            self,
+            roots=roots,
+            ignored=ignored if ignored is not None else DEFAULT_IGNORED,
+            debounce=debounce,
+            recursive=recursive,
+            backend=backend,
+            on_error=on_error,
+        ).start()
 
     # ------------------------------------------------------------------
     # 事务

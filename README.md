@@ -16,7 +16,7 @@ Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotempo
 - **配置 overlay**：`internal/config` waterfall——插件 config 激活前经父链监听器改写（只对注册者的后代生效），配合 `deep_merge` 实现分层合并与租户派生；改写结果再进入 `Config` 校验。
 - **同步/异步双模式**：有运行事件循环时后台异步调度；无事件循环时生命周期内联驱动（`dispose_sync` / `restart_sync` / `update_sync`），遇到需要事件循环的操作抛出 `AsyncRequiredError`。
 - **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
-- **HMR 依赖图分类**：追踪模块导入边（运行时追踪 + AST 补全），对变更模块计算 accepted/declined 分类，自动找出并事务式重载受影响条目（`reload_file` / `reload_module` / `reload_entry`），失败时回滚到旧代码与旧插件。
+- **HMR 依赖图分类**：追踪模块导入边（运行时追踪 + AST 补全），对变更模块计算 accepted/declined 分类，自动找出并事务式重载受影响条目（`reload_file` / `reload_module` / `reload_entry`），失败时回滚到旧代码与旧插件；`HMR.watch()` 监听源码目录自动触发（可选依赖 watchdog）。
 
 ## 安装
 
@@ -124,16 +124,20 @@ root.plugin(some_plugin)                          # 其 config 自动叠加租�
 
 ### HMR 热重载
 
-开发期修改插件或共享依赖的源码后，只重载实际受影响的条目：
+开发期修改插件或共享依赖的源码后，只重载实际受影响的条目；也可监听源码目录自动触发：
 
 ```python
 from cordis_py import HMR
 
 hmr = HMR(loader)                              # 启用模块依赖图追踪
-await hmr.reload_file("src/plugins/worker.py")  # 变更文件 → 自动分类并事务式重载
+watcher = hmr.watch(["src"])                   # 监听源码目录，保存文件后自动重载
+await hmr.reload_file("src/plugins/worker.py")  # 或手动触发：变更文件 → 事务式重载
 await hmr.reload_module("myapp.helpers")        # 或按模块名
+await watcher.stop()
 hmr.dispose()                                  # 退出时卸载追踪器
 ```
+
+文件监听依赖 watchdog（`pip install cordis-python[watch]`）；不安装时 `HMR` 核心与手动触发不受影响。
 
 ## 文档
 

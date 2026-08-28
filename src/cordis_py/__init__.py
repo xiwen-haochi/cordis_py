@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .context import Context
+from .depgraph import Classification, ModuleGraph
 from .discovery import discover, load_entry_points
 from .errors import (
     AsyncRequiredError,
@@ -27,6 +28,7 @@ from .utils import Disposable, Effect, Inject, deep_merge
 __all__ = [
     "HMR",
     "AsyncRequiredError",
+    "Classification",
     "ConfigValidationError",
     "Context",
     "CordisError",
@@ -44,6 +46,7 @@ __all__ = [
     "InvalidPlugin",
     "InvalidRequirement",
     "Loader",
+    "ModuleGraph",
     "RegistryService",
     "Service",
     "ServiceConflict",

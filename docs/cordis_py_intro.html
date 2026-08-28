@@ -484,17 +484,18 @@ await loader.include("cordis.yml")
 # 修改配置后调用 reconcile，仅重建发生变化的条目
 await loader.reconcile()</code></pre>
 
-  <h3>4.4 热模块替换（HMR）草案</h3>
+  <h3>4.4 热模块替换（HMR）</h3>
   <ol>
-    <li><strong>模块分类</strong>：对变更文件集合计算 accepted/declined 集合。</li>
-    <li><strong>过期条目检测</strong>：找出 import 依赖树中触及 accepted 模块的 Entry。</li>
-    <li><strong>事务式重载</strong>：备份并失效 <code>sys.modules</code> 中的旧模块，dispose 旧 fiber，重新 import 并 <code>ctx.use</code>；失败时恢复缓存。</li>
+    <li><strong>模块分类</strong>：对变更模块集合计算 accepted/declined 集合（模块导入边由运行时追踪器 + AST 静态补全两路构成）。</li>
+    <li><strong>过期条目检测</strong>：找出 import 依赖树中触及 accepted 模块的 Loader 条目。</li>
+    <li><strong>事务式重载</strong>：快照旧插件与模块命名空间，dispose 旧 fiber，按拓扑序重载变更模块与条目模块，再重新 apply；任一步失败则回滚并重抛。</li>
   </ol>
-  <pre><code>from cordis_py.hmr import HMR
+  <pre><code>from cordis_py import HMR
 
 hmr = HMR(loader)
-await hmr.watch(["src/myapp"])   # 开发时监听源码变化
-# 保存文件后自动触发：classify -> detect -> reload</code></pre>
+await hmr.reload_file("src/plugins/worker.py")   # 变更文件 → 自动分类并事务式重载
+await hmr.reload_module("myapp.helpers")         # 或按模块名手动触发
+hmr.dispose()                                    # 退出时卸载依赖图追踪器</code></pre>
 </section>
 
 <section id="phases">
@@ -530,7 +531,7 @@ await hmr.watch(["src/myapp"])   # 开发时监听源码变化
     <li>按 realm 的服务隔离</li>
     <li>intercept 服务级配置拦截</li>
     <li>声明式 Loader：JSON / YAML / TOML、reconcile、disable / enable</li>
-    <li>开发期最小 HMR</li>
+    <li>HMR 依赖图分类：模块边追踪、accepted/declined 分类、事务式重载与回滚</li>
     <li>Python entry points 插件发现</li>
     <li>完整同步/异步双模式封装</li>
     <li>单元测试与可运行 demo</li>
@@ -542,7 +543,7 @@ await hmr.watch(["src/myapp"])   # 开发时监听源码变化
   <ul>
     <li>跨进程 Bridge / 远程服务</li>
     <li>沙箱与不可信插件隔离</li>
-    <li>更完整的 HMR 依赖图分类</li>
+    <li>HMR 文件监听器与 watcher 集成（watchdogs 或手动触发）</li>
   </ul>
 
   <div class="note">

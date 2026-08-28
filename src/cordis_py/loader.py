@@ -124,8 +124,10 @@ class Loader:
                 elif existing is None and not entry.disabled:
                     await self._start_entry(entry)
 
-    async def _start_entry(self, entry: Entry) -> Fiber:
-        plugin = import_string(entry.url)
+    async def _start_entry(self, entry: Entry, *, plugin: Any | None = None) -> Fiber:
+        # 允许传入已解析的插件对象（HMR 重载时复用 isolate/intercept 链）。
+        if plugin is None:
+            plugin = import_string(entry.url)
         context = self.ctx
         # 存在 isolate/intercept 时，通过子上下文应用简单隔离/拦截。
         for name, realm in entry.isolate.items():

@@ -63,6 +63,7 @@ cordis_py/
 │       ├── depgraph.py            # 模块依赖图与 HMR 分类
 │       ├── hmr.py                 # 开发期事务式热重载
 │       ├── watcher.py             # 文件监听器（watchdog 可选依赖）
+│       ├── scope.py               # 作用域路由与协调式隔离
 │       ├── discovery.py           # Python entry points 插件发现
 │       ├── errors.py              # 异常定义
 │       └── utils.py               # 公共工具
@@ -167,7 +168,6 @@ git commit -m "feat: 增加声明式加载器"
 当前待办方向：
 
 - 跨进程 Bridge / 远程服务
-- 沙箱与不可信插件隔离
 
 ---
 

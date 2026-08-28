@@ -41,7 +41,9 @@ class ServiceEntry:
 class Listener:
     handler: Callable[..., Any]
     owner: Fiber
+    ctx: Context | None = None
     once: bool = False
+    global_: bool = False
 
 
 class Context:
@@ -56,6 +58,8 @@ class Context:
         self._fiber = fiber
         self._isolation: dict[str, Any] = {}
         self._intercept: dict[str, Any] = {}
+        self._filter: Callable[[Context], bool] | None = None
+        self._scope_key: Any = None
         if parent is None:
             self._root = self
             self._services: dict[str, ServiceEntry] = {}
@@ -65,6 +69,8 @@ class Context:
             self._root_fiber = Fiber(self, None, None, {}, uid=0, is_root=True)
         else:
             self._root = parent._root
+            self._filter = parent._filter
+            self._scope_key = parent._scope_key
 
     # ------------------------------------------------------------------
     # 基本属性
@@ -282,10 +288,21 @@ class Context:
     # 事件
     # ------------------------------------------------------------------
 
-    def on(self, event: str, handler: Callable[..., Any], *, prepend: bool = False) -> Disposable:
-        """注册由当前 fiber 拥有的事件监听器。"""
+    def on(
+        self,
+        event: str,
+        handler: Callable[..., Any],
+        *,
+        prepend: bool = False,
+        global_: bool = False,
+    ) -> Disposable:
+        """注册由当前 fiber 拥有的事件监听器。
+
+        *global_* 为 True 时该监听器无视任何派发过滤（对应 Node
+        ``EventOptions.global``：无论上下文过滤器如何都接收事件）。
+        """
         fiber = self.fiber
-        listener = Listener(handler, fiber)
+        listener = Listener(handler, fiber, ctx=self, global_=global_)
         listeners = self._root._listeners.setdefault(event, [])
         if prepend:
             listeners.insert(0, listener)
@@ -299,7 +316,14 @@ class Context:
         fiber.add_effect(undo)
         return undo
 
-    def once(self, event: str, handler: Callable[..., Any], *, prepend: bool = False) -> Disposable:
+    def once(
+        self,
+        event: str,
+        handler: Callable[..., Any],
+        *,
+        prepend: bool = False,
+        global_: bool = False,
+    ) -> Disposable:
         """注册一次性事件监听器。"""
         fiber = self.fiber
         listeners = self._root._listeners.setdefault(event, [])
@@ -312,7 +336,7 @@ class Context:
             undo()
             return handler(*args, **kwargs)
 
-        listener = Listener(wrapper, fiber)
+        listener = Listener(wrapper, fiber, ctx=self, global_=global_)
         if prepend:
             listeners.insert(0, listener)
         else:
@@ -320,21 +344,49 @@ class Context:
         fiber.add_effect(undo)
         return undo
 
-    def _dispatch(self, event: str) -> list[Listener]:
+    @staticmethod
+    def _receiver_filter(receiver: Any) -> Callable[[Context], bool] | None:
+        """从派发接收者对象上提取过滤器。
+
+        receiver 为 :class:`Context` → 用其 ``_filter``（经 :meth:`filtered` 设置）；
+        任意对象携带 ``context_filter`` 属性 → 用该谓词；否则视为不过滤。
+        """
+        if isinstance(receiver, Context):
+            return receiver._filter
+        return getattr(receiver, "context_filter", None)
+
+    def _dispatch(self, event: str, receiver: Any | None = None) -> list[Listener]:
+        """收集监听器并按接收者过滤器筛选。
+
+        与 Node ``EventsService.dispatch`` 对齐：只有 ``global_`` 监听器、未设置
+        过滤器、或谓词对监听器注册上下文返回真值的监听器参与本次派发。
+        """
         listeners = list(self._root._listeners.get(event, []))
+        if receiver is not None:
+            predicate = self._receiver_filter(receiver)
+            if predicate is not None:
+                listeners = [
+                    listener
+                    for listener in listeners
+                    if listener.global_ or predicate(listener.ctx or listener.owner.ctx)
+                ]
+        live = self._root._listeners.get(event, [])
         for listener in listeners:
-            if listener.once and listener in self._root._listeners.get(event, []):
-                self._root._listeners[event].remove(listener)
+            if listener.once and listener in live:
+                live.remove(listener)
         return listeners
 
-    def emit(self, event: str, *args: Any) -> None:
+    def emit(self, event: str, *args: Any, receiver: Any | None = None) -> None:
         """同步分发事件。
 
         有运行事件循环时，异步监听器会被调度为后台任务；
         无事件循环（同步模式）时只能执行同步监听器，若遇到异步监听器会抛出
         :class:`AsyncRequiredError`，避免监听器代码被静默丢弃。
+
+        *receiver* 为派发接收者（:class:`Context` 或携带 ``context_filter`` 的载体），
+        其过滤器决定哪些监听器对本派发可见。
         """
-        for listener in self._dispatch(event):
+        for listener in self._dispatch(event, receiver):
             try:
                 result = listener.handler(*args)
             except Exception:  # noqa: BLE001, S112
@@ -348,31 +400,31 @@ class Context:
                 result.close()
                 raise AsyncRequiredError(f"事件 {event!r} 的异步监听器")
 
-    async def parallel(self, event: str, *args: Any) -> None:
-        """并发运行所有监听器并等待完成。"""
-        listeners = self._dispatch(event)
+    async def parallel(self, event: str, *args: Any, receiver: Any | None = None) -> None:
+        """并发运行所有监听器并等待完成（同步监听器同样受支持）。"""
+        listeners = self._dispatch(event, receiver)
         results = await asyncio.gather(
-            *(listener.handler(*args) for listener in listeners),
+            *(await_maybe(listener.handler(*args)) for listener in listeners),
             return_exceptions=True,
         )
         errors = [r for r in results if isinstance(r, BaseException)]
         if errors:
             raise errors[0]
 
-    async def serial(self, event: str, *args: Any) -> Any:
+    async def serial(self, event: str, *args: Any, receiver: Any | None = None) -> Any:
         """按顺序运行监听器并逐个 await，直到返回短路值。"""
-        for listener in self._dispatch(event):
+        for listener in self._dispatch(event, receiver):
             result = await await_maybe(listener.handler(*args))
             if result is not None and result is not False:
                 return result
         return None
 
-    def bail(self, event: str, *args: Any) -> Any:
+    def bail(self, event: str, *args: Any, receiver: Any | None = None) -> Any:
         """同步运行监听器，直到其中一个返回短路值。
 
         同步模式下无法执行异步监听器，遇到时抛出 :class:`AsyncRequiredError`。
         """
-        for listener in self._dispatch(event):
+        for listener in self._dispatch(event, receiver):
             result = listener.handler(*args)
             if inspect.isawaitable(result):
                 result.close()
@@ -381,13 +433,13 @@ class Context:
                 return result
         return None
 
-    async def waterfall(self, event: str, *args: Any) -> Any:
+    async def waterfall(self, event: str, *args: Any, receiver: Any | None = None) -> Any:
         """将监听器组合成中间件链。
 
         每个监听器接收 ``(*args, next)``；不调用 ``next`` 会否决后续链路，
         ``next()`` 无参时沿用当前参数。
         """
-        return await self._run_waterfall(self._dispatch(event), args)
+        return await self._run_waterfall(self._dispatch(event, receiver), args)
 
     async def _run_waterfall(self, listeners: list[Listener], args: tuple[Any, ...], fallback: Callable[..., Any] | None = None) -> Any:
         """按注册顺序运行监听器中间件链；不调用 ``next`` 即短路。
@@ -465,6 +517,21 @@ class Context:
         child._fiber = self.fiber
         child._isolation = dict(self._isolation)
         child._isolation[name] = realm if realm is not None else object()
+        return child
+
+    def filtered(self, predicate: Callable[[Context], bool]) -> Context:
+        """创建携带监听器过滤谓词（filter）的子上下文。
+
+        该子上下文（及其后代）作为派发接收者时，只有谓词对监听器注册上下文
+        返回真值的监听器（或 ``global_`` 监听器）会被触发——对应 Node 版 Cordis
+        的 ``Context.filter``（经 ``extend`` 设置）：过滤边界由“谁发起接收者
+        派发”决定，是构建不可信插件隔离（配合 :mod:`~cordis_py.scope` 路由）的
+        核心原语。
+        """
+        child = Context(self)
+        child._fiber = self.fiber
+        child._isolation = dict(self._isolation)
+        child._filter = predicate
         return child
 
     def intercept(self, name: str, metadata: Any) -> Context:

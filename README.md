@@ -17,6 +17,7 @@ Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotempo
 - **同步/异步双模式**：有运行事件循环时后台异步调度；无事件循环时生命周期内联驱动（`dispose_sync` / `restart_sync` / `update_sync`），遇到需要事件循环的操作抛出 `AsyncRequiredError`。
 - **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
 - **HMR 依赖图分类**：追踪模块导入边（运行时追踪 + AST 补全），对变更模块计算 accepted/declined 分类，自动找出并事务式重载受影响条目（`reload_file` / `reload_module` / `reload_entry`），失败时回滚到旧代码与旧插件；`HMR.watch()` 监听源码目录自动触发（可选依赖 watchdog）。
+- **作用域隔离**：`Context.filtered()` 监听器过滤 + `create_scope` / `scope_target` 作用域路由——不可信插件的监听器对可信派发不可见（事件只向上流，不向下），`global_` 监听器显式放行；服务侧由 `isolate` / realm 隔离。
 
 ## 安装
 
@@ -138,6 +139,25 @@ hmr.dispose()                                  # 退出时卸载追踪器
 ```
 
 文件监听依赖 watchdog（`pip install cordis-python[watch]`）；不安装时 `HMR` 核心与手动触发不受影响。
+
+### 作用域隔离（协调式边界）
+
+不可信插件的监听器对“可信接收者”派发默认不可见；事件只向上流，不向下：
+
+```python
+from cordis_py import Context, create_scope, scope_target
+
+root = Context()
+untrusted = create_scope(root, "market/plugin-x")
+trusted = create_scope(root, "trusted/area")
+
+untrusted.ctx.on("cloud/update", on_event)   # 恶意监听：可信派发时被过滤
+root.emit("cloud/update", "1", receiver=scope_target(root, "trusted/area"))
+
+await untrusted.dispose()
+```
+
+这是**协调式**隔离（Cordis 语义：事件与服务可见性边界），不是恶意代码的真实安全边界；OS 级资源沙箱（子解释器 / subprocess / 文件系统限制）属宿主职责。
 
 ## 文档
 

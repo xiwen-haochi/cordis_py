@@ -22,6 +22,7 @@ from .fiber import Fiber, FiberState
 from .hmr import HMR
 from .loader import Entry, Loader
 from .registry import RegistryService
+from .scope import Scope, bind_scope_parent, create_scope, scope_of, scope_target
 from .service import Service, inject, require
 from .utils import Disposable, Effect, Inject, deep_merge
 from .watcher import HMRWatcher
@@ -50,14 +51,19 @@ __all__ = [
     "Loader",
     "ModuleGraph",
     "RegistryService",
+    "Scope",
     "Service",
     "ServiceConflict",
     "UndeclaredAccess",
+    "bind_scope_parent",
+    "create_scope",
     "deep_merge",
     "discover",
     "inject",
     "load_entry_points",
     "require",
+    "scope_of",
+    "scope_target",
 ]
 
 __version__ = "0.6.0"

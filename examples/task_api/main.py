@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import sys
-
 import argparse
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 

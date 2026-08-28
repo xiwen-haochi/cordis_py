@@ -1,8 +1,26 @@
 # cordis_py
 
-**Cordis 的 Python 实现**：面向动态系统的时空可组合性（spatiotemporal composability）元框架——把“装上的东西都能拆下来、依赖变化自动联动、能力可以声明式组合”变成可用的 Python 动态组合框架。
+**Cordis 的 Python 实现**：面向动态系统的时空可组合性（spatiotemporal composability）元框架。
 
-## 原理（30 秒版）
+```python
+pip install cordis-python
+```
+
+PyPI 发布名为 `cordis-python`（导入名 `cordis_py`），仓库：<https://github.com/xiwen-haochi/cordis_py>。
+
+---
+
+## 1. 为什么存在（三个痛点 → 三个承诺）
+
+| 传统动态系统的痛点 | cordis_py 的承诺 |
+| --- | --- |
+| 功能“装上去容易、拆下来难” | **一切可逆**：卸载插件 = 自动回收它注册的所有东西（服务、事件、路由、资源），无残留 |
+| 组件初始化顺序写死，换顺序/加组件就是重构 | **依赖响应式**：先装消费者后装提供者也能自动激活；装配顺序无关 |
+| 能力都在主程序里，扩展 = 改核心代码 | **声明式组合**：应用 = 配置（插件列表）+ 插件（代码）；新增能力 = 加一行配置、装一个插件 |
+
+设计基准：论文《A Programming Paradigm for Spatiotemporal Composability》与 Node.js 版 Cordis v4（不参考任何其他 Python Cordis 实现）。
+
+## 2. 核心概念（30 秒总览）
 
 ```text
                 ┌────────────────────────────────────────────┐
@@ -22,151 +40,285 @@
                - 注册路由、资源等一切“装上去”的东西
 ```
 
-三句话讲清楚：
+### 2.1 概念详解
 
-1. **应用 = 插件集合**：能力（服务、路由、中间件、任务）都是插件；`Loader` 从一份配置文件声明式装配，新增能力 = 加一行配置。
-2. **一切可逆**：插件运行在 Fiber 里，注册的一切（服务、事件监听、路由、定时任务）随 Fiber 卸载自动回收（LIFO）——不会“改了一半”的应用状态。
-3. **依赖响应式**：先装消费者后装提供者也能自动激活；提供者卸载后消费者自动退出。装配顺序无关。
-
-## 安装
-
-```bash
-pip install cordis-python            # PyPI 发布名；导入名 cordis_py
-pip install cordis-python[watch]     # 附加 HMR 文件监听（watchdog）
-pip install cordis-python[yaml,pydantic]  # 附加 YAML 配置 / 配置模型校验
-```
+| 概念 | 是什么 | 为什么 | 怎么用 |
+| --- | --- | --- | --- |
+| **Context** | 依赖容器（根或子）。插件拿到的每个 `ctx` 都是根链上的一个节点 | 隔离与服务查找都发生在上下文链上（`isolate` / `intercept` / `filtered` 返回子上下文） | `root = Context()`；插件函数第一参数 |
+| **Fiber** | 一个插件的运行实例，带生命周期状态机（PENDING → ACTIVE → UNLOADING → DISPOSED） | 状态公开可诊断（`fiber.state` / `fiber.unsatisfied`），可等待（`await fiber`）、可重启（`restart` / `update`）、可卸载（`dispose`） | `ctx.plugin(plugin, config)` 返回 Fiber |
+| **效果（Effect）** | 注册到一个 fiber 的可逆动作：`disposer` / 同步迭代 / 异步迭代 | 可逆副作用的账本；fiber 卸载按 LIFO 逐个执行 | `ctx.effect(lambda: undo)`；服务提供、事件监听、路由注册内部都登记为效果 |
+| **服务与注入** | `provide(name, value)` 注册；`ctx.get(name)` 读取；`@inject("name")` 声明消费 | 服务的可见性由“值的提供者是否 ACTIVE”决定——这是响应式依赖的载体 | `ctx.provide("db", db)`；`@inject(["db","log"]) def plugin(ctx, config)` |
+| **契约校验** | `provide(version=)` + `@require("svc", ">=1.0")` / 接口谓词 | 依赖升级的护栏；约束不满足 = 软等待，提供方变化后自动重评 | `@require("tenants", ">=1.0")` |
+| **事件** | `on` / `once` / `emit` / `parallel` / `serial` / `bail` / `waterfall` | 插件间解耦通信；`waterfall` 是中间件链（不调用 `next()` 即拦截） | `ctx.on("http/request", handler)`；监听器随插件 fiber 自动回收 |
+| **配置** | 插件挂 `Config` 属性（callable 或 pydantic 模型，可选）校验/转换 | 配置错误在装载期报错，而不是运行期诡异行为 | `plugin.Config = validate`；`internal/config` waterfall 可在激活前改写（租户派生） |
+| **Loader** | 从配置装配：`reconcile` 增量协调、`disable/enable`、JSON/YAML/TOML | 应用状态与配置描述始终一致 | `Loader(root).include("app.yml")` |
+| **HMR** | 开发期热替换：模块依赖图分类 + 事务式重载 + 失败回滚 | 改插件源码不重启进程（见场景 B） | `HMR(loader)` + `watch(["src"])` |
+| **隔离** | `isolate`（服务 realm）/ `filtered` + scope（事件可见性）/ 契约 | 多租户与不可信插件边界（协调式，非 OS 沙箱） | 见场景 A 与扩展实战 |
+| **Bridge** | 跨进程服务代理与事件贯通（JSON-lines 帧协议） | 昂贵共享能力留主进程，worker 代理调用 | 见场景 C |
 
 ---
 
-## 教程：三个实战场景
+## 3. 第一个插件（每个步骤都注释了为什么）
 
-### 场景 A：插件化 HTTP 多租户任务 API（生产案例）
+```python
+import asyncio
+from cordis_py import Context, Service, inject
 
-完整代码在 [examples/task_api](examples/task_api/README.md)：FastAPI 应用由 **9 个插件声明式装配**，`app.yml` 就是架构图；徒手写一个同规模应用通常要数百行 main.py。
 
-**运行**
+class Greeter(Service):                       # 服务 = 能力的最小单元
+    def __init__(self, ctx: Context):
+        super().__init__(ctx, "greeter")      # 构造即注册为根容器服务（可逆）
 
-```bash
-cd examples/task_api
-pip install -r requirements.txt        # fastapi / uvicorn / httpx
-python main.py --port 8000             # 启动即启用 HMR（默认开启，见 main 入口）
-pytest tests/ -q                       # 6 个集成测试（TestClient 全链路）
+    def hello(self, name: str) -> str:
+        return f"Hello, {name}!"
+
+
+@inject("greeter")                            # 声明依赖：greeter 未就绪时本插件不激活
+def greeter_plugin(ctx: Context, config: dict):
+    # ctx.greeter 在插件激活后才可读；事件监听器随本插件 fiber 回收
+    ctx.on("app/ready", lambda msg: print(ctx.greeter.hello(msg)))
+    return None
+
+
+async def main():
+    root = Context()
+    await root.plugin(Greeter)                # 装服务（先装消费者也能顺序颠倒）
+    await root.plugin(greeter_plugin)
+    root.emit("app/ready", "Cordis")          # 事件驱动
+    await root.fiber.dispose()                # LIFO 回收：监听器、服务全部移除
+
+
+asyncio.run(main())
 ```
 
-**体验（多租户 + 限流 + 指标）**
+没有事件循环时用同步 API：`root.fiber.dispose_sync()`（其余为 `restart_sync` / `update_sync`；遇到必须事件循环的操作会抛 `AsyncRequiredError`）。
 
-```bash
-curl -s http://127.0.0.1:8000/api/health                       # 公开健康检查
-curl -s -X POST -H "X-Tenant: acme" -H "X-API-Key: key-acme" \
-     -H "Content-Type: application/json" -d '{"title": "写文档", "priority": 2}' \
-     http://127.0.0.1:8000/api/tasks                            # acme 创建
-curl -s -H "X-Tenant: globex" -H "X-API-Key: key-globex" \
-     http://127.0.0.1:8000/api/tasks                            # globex：空（数据隔离）
-# 连续第 6 次请求（limit=5）→ 429 rate_limited
+---
+
+## 4. 场景 A：插件化 HTTP 多租户任务 API（examples/task_api）
+
+### 4.1 这个 example 为什么这么写（设计目的）
+
+传统同规模 FastAPI 应用的主程序通常是：路由、中间件、依赖、配置、生命周期混在一个文件里。
+example 的目的不是“演示功能”，而是展示**组织方式**：
+
+- **每个关注点是一个插件**：HTTP 装配、认证、限流、审计、指标、业务、租户、健康检查是 8 个正交能力，各自一个文件 + 一份配置——增删能力不动其他文件；
+- **配置即架构图**：`app.yml` 列出全部插件与其参数，读者不看 import 就能画出系统；
+- **装配顺序刻意“错误”**：业务插件 `tasks` 排在 `http` / `tenant` 之前——证明依赖响应式（提供者后出现也能自动激活）；
+- **宿主只做两件事**：创建应用对象（注入 `fastapi_app`）与加载配置——核心包零 Web 依赖，换框架只换宿主层；
+- **一切可逆**：路由注册登记为效果——插件卸载/热替换时自动清理，不会出现“旧路由还在”的僵尸状态。
+
+### 4.2 目录结构
+
+```text
+examples/task_api/
+├── main.py                  # 宿主：约 40 行（创建 FastAPI、注入、装配、可选 HMR）
+├── app.yml                  # 声明式装配：9 个插件
+├── plugins/
+│   ├── logger_plugin.py     # log 服务（日志工厂）
+│   ├── http_service.py      # gate 中间件 + 瀑布链 + 路由注册表
+│   ├── tenant.py            # 租户 realm 隔离 + TaskStore
+│   ├── auth.py              # API Key 认证（契约：authenticate(request)）
+│   ├── jwt_auth.py          # ← JWT 认证（同契约替代实现，见 §7）
+│   ├── quota.py             # 限流（瀑布链短路径）
+│   ├── audit.py             # 审计日志（事件监听）
+│   ├── metrics.py           # 指标计数 + /api/metrics
+│   ├── tasks.py             # 业务 CRUD（emit 事件 + 指标埋点）
+│   └── health.py            # 健康检查
+└── tests/                   # 11 个集成/单元测试（含 JWT 契约）
 ```
 
-**每个插件的作用与配置参数**
+### 4.3 宿主：应用与插件唯一的接缝（main.py）
+
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    root = Context()
+    root.provide("fastapi_app", app)        # ① 宿主注入运行时对象（不进配置文件）
+    loader = Loader(root)
+    await loader.include(BASE / "app.yml")  # ② 声明式装配（文件即架构）
+    if getattr(app.state, "watch", False):  # ③ 开发期热替换（默认开启）
+        hmr = HMR(loader)
+        app.state.hmr_watcher = hmr.watch([str(BASE / "plugins")])
+    yield
+    await loader.dispose()                  # ④ 退出：reverse 顺序回收全部插件
+    await root.fiber.dispose()
+```
+
+### 4.4 关键机制（三段代码）
+
+**瀑布中间件**（http_service 插件）：认证 → 插件链 → 真实处理。`quota` 插件不调用 `next()` 就返回 429——中间件是“可插拔的插件”，不进 FastAPI 栈。
+
+```python
+async def gate(request, call_next):
+    rejected = (ctx.get("auth") or NoopAuth()).authenticate(request)  # 认证是服务，可替换
+    if rejected is not None:
+        return rejected                                                # 401
+    return await ctx.waterfall("http/request", tenant, request,
+                               fallback=lambda *args: call_next(request))
+```
+
+**租户数据隔离**（tenant 插件）：`isolate("tasks", realm)` 为每个租户建立独立服务作用域，全局只按 `(realm, name)` 查找——globex 的请求**物理上**无法读到 acme 的存储（而不是靠业务里 `if tenant == ...` 的约定）。
+
+```python
+scoped = ctx.isolate("tasks", name)     # 子上下文：该租户 realm
+scoped.provide("tasks", TaskStore(name))  # 键 = (name, "tasks")
+...
+store = self._scopes[name].get("tasks")   # 经该租户作用域解析
+```
+
+**可逆路由**（tasks 插件）：路由注册登记为 fiber 效果——插件重载时旧路由自动移除、新插件重注册同名路由（整体替换，无僵尸路由）。
+
+```python
+undos = [routes.add("GET", "/api/tasks", list_tasks), ...]
+ctx.effect(lambda: undo_all)            # dispose 时逐一撤销
+```
+
+### 4.5 插件职责与配置参数
 
 | 插件 (id) | 职责 | 配置 | 说明 |
 | --- | --- | --- | --- |
-| `logger` | 提供 `log` 服务（标准库 logging 工厂） | `level`（默认 INFO） | 其他插件 `ctx.get("log")("name")` 取子 logger |
-| `http` | 装配 FastAPI：gate 中间件（认证→瀑布→真实处理）、`routes` 路由注册表、`app` 服务 | `title` | 宿主注入 `fastapi_app`；路由可逆（重载自动卸载） |
-| `tenant` | 为每个租户 `isolate("tasks", realm)` 并注册专属存储；提供 `tenants` 服务（version=1.0） | `tenants: [acme, globex]` | realm 服务解析：`scoped.get("tasks")` 物理隔离 |
-| `auth` | X-Tenant / X-API-Key 校验 → `request.state.tenant` | `keys: {tenant: key}`、`public_paths` | 失败返回 401；公开路径免认证直通 |
-| `quota` | 固定窗口限流，`http/request` 瀑布链短路返回 429 | `limit`（默认 5）、`window` 秒（默认 30） | 不调用 `next()` 即拦截；公开路径不限流 |
-| `tasks` | 任务 CRUD + 事件（task/created、deleted）+ 指标 | `page_size`（默认 20） | **依赖 routes/tenants，装配顺序无关**（响应式） |
-| `audit` | 监听任务事件写审计日志 | `event_prefix` | 随插件 fiber 回收 |
-| `metrics` | 计数服务 + `/api/metrics` 路由 | `namespace`（默认 cordis） | 键形如 `taskapi.tasks.created` |
-| `health` | `/api/health`（公开：服务状态/租户列表） | — | — |
+| `logger` | 提供 `log` 服务（logging 工厂） | `level`（默认 INFO） | 其他插件 `ctx.get("log")("name")` |
+| `http` | 装配：gate 中间件、`routes` 注册表、`app` 服务 | `title` | 宿主注入 `fastapi_app` |
+| `tenant` | 每租户 `isolate` + 专属存储；`tenants` 服务（version=1.0） | `tenants: [acme, globex]` | realm 服务查找 |
+| `auth` | X-Tenant / X-API-Key → `request.state.tenant` | `keys: {tenant: key}`、`public_paths` | 失败 401；**契约接口可被 jwt_auth 替换** |
+| `quota` | 固定窗口限流（瀑布短路径 429） | `limit`（默认 5）、`window` 秒（默认 30） | 公开路径不限流 |
+| `tasks` | 任务 CRUD + 事件 + 指标 | `page_size`（默认 20） | 装配顺序无关（响应式） |
+| `audit` | 任务事件审计日志 | `event_prefix` | 监听器随 fiber 回收 |
+| `metrics` | 计数服务 + `/api/metrics` | `namespace`（默认 cordis） | 键如 `taskapi.tasks.created` |
+| `health` | 公开健康检查 | — | 返回状态与租户列表 |
 
-**三个关键机制**
+### 4.6 运行与验证
 
-- **响应式装配**：`tasks` 在配置中排在 `http` / `tenant` 之前——因依赖缺失软等待，提供者出现后自动激活并注册路由；
-- **瀑布中间件**：每请求 `ctx.waterfall("http/request", tenant, request, fallback=call_next)`，插件式拦截（限流/校验），链尾是真实处理；
-- **可逆路由**：业务插件 `ctx.effect` 登记路由 disposer——插件卸载时路由自动移除，HMR 重载时整体替换。
+```bash
+cd examples/task_api
+pip install -r requirements.txt     # fastapi / uvicorn / httpx / watchdog
+python main.py --port 8000          # 启动即启用 HMR（默认开启）
+pytest tests/ -q                    # 11 个测试
+```
+
+```bash
+curl -s http://127.0.0.1:8000/api/health                                     # 公开健康检查
+curl -s -X POST -H "X-Tenant: acme" -H "X-API-Key: key-acme" \
+     -H "Content-Type: application/json" -d '{"title": "写文档", "priority": 2}' \
+     http://127.0.0.1:8000/api/tasks                                          # acme 创建
+curl -s -H "X-Tenant: globex" -H "X-API-Key: key-globex" \
+     http://127.0.0.1:8000/api/tasks                                          # globex：空（隔离）
+# 连续第 6 次请求 → 429 rate_limited；/api/metrics 查看计数
+```
 
 ---
 
-### 场景 B：开发期热更新（HMR）
+## 5. 场景 B：开发期热更新（HMR）
 
-**目的**：改插件源码不需要重启进程——插件热替换、依赖树精确分类、失败自动回滚。
-
-**最小用法**
+**目的**：改插件源码不重启进程。依赖图分类保证“只重载受影响的条目”，事务回滚保证失败不破坏运行状态。
 
 ```python
-from cordis_py import Context, HMR, Loader
+from cordis_py import HMR
 
-root = Context()
-loader = Loader(root)
-await loader.include("app.yml")            # 声明式装配
-
-hmr = HMR(loader)                          # 安装模块依赖图追踪（运行时 + AST 补全）
+hmr = HMR(loader)                          # 安装模块依赖图追踪（运行时导入边 + 已加载模块 AST 补全）
 watcher = hmr.watch(["src/plugins"])       # 监听源码目录（需要 cordis-python[watch]）
+# watcher 参数：ignored（默认忽略 .*/__pycache__/node_modules/.venv/cache/data）、
+#              debounce（秒，默认 0.1，合并连续保存）、recursive、on_error(path, exc)
 
-await hmr.reload_file("src/plugins/worker.py")   # 手动触发：变更文件 → 事务式重载
+await hmr.reload_file("src/plugins/worker.py")   # 手动触发：返回受影响条目 id 列表
 await hmr.reload_module("myapp.helpers")         # 或按模块名
 await hmr.reload_entry("worker")                 # 或按条目 id（连带重载其依赖者）
+print(hmr.affected({"myapp.helpers"}))           # 只预测不执行
 
 await watcher.stop()
-hmr.dispose()
+hmr.dispose()                                    # 卸载追踪器（幂等）
 ```
 
-**验证热替换**：修改 `src/plugins/worker.py`（如切换模型服务、调整阈值）并保存——
-1.5 秒内新逻辑生效：旧 fiber 被 dispose（服务/监听器/路由/内部状态整体清理），新代码重新应用；
-限流窗口、计数器等插件内部状态归零即证明“旧实例已被替换”。支持编辑器原子保存（临时文件 + rename）。
+**验证热替换**：修改 `src/plugins/worker.py` 保存后 1.5 秒内新逻辑生效；限流窗口、计数器等插件内部状态归零 = 旧实例已被完整替换。支持编辑器原子保存（临时文件 + rename，watcher 视为新建）。
 
-**API 与参数**
-
-| API | 参数 | 说明 |
-| --- | --- | --- |
-| `HMR(loader, *, graph=None)` | `graph`：共享/替换依赖图实例 | 构造即安装导入边追踪器 |
-| `watch(roots, *, ignored, debounce, recursive, backend, on_error)` | `roots` 目录列表；`ignored` 默认 `("**/.*","**/__pycache__","**/node_modules","**/.venv","cache","data")`；`debounce` 秒（默认 0.1）；`on_error(path, exc)` 失败回调 | 返回 `HMRWatcher`；事件线程安全 |
-| `reload_file(path)` | 文件路径（未导入/非 `.py` 自然忽略） | 返回受影响条目 id 列表 |
-| `reload_module(name)` / `reload_entry(id)` / `reload_all()` | 模块名 / 条目 id / 全量 | 同上；entry 会连带重载其依赖者 |
-| `affected(changed)` | 变更模块集合 | 只预测不执行 |
-| `dispose()` / `watcher.stop()` | — | 卸载追踪器 / 停止监听（幂等） |
-
-**机制**：变更模块按依赖图分类为 accepted/declined（对齐 Node `analyzeChanges`）；重载集 = 变更模块 + 受影响条目模块（按拓扑序，依赖先于导入者）；失败时恢复模块命名空间快照并用旧插件重新应用（回滚）。
+**机制**：变更模块按依赖图分类 accepted/declined（对齐 Node `analyzeChanges`）→ 重载集 = 变更模块 + 受影响条目模块（拓扑序，依赖先于导入者）→ 快照插件与模块命名空间 → 失败恢复快照并用旧插件重新应用（回滚）。仅纯 Python 源码模块；`__main__` / cordis_py 自身变更视为全量重启（不在范围）。
 
 ---
 
-### 场景 C：跨进程共享服务（Bridge）
+## 6. 场景 C：跨进程共享服务（Bridge）
 
-**目的**：昂贵的共享能力（模型、缓存客户端、数据库连接池）留在主进程，worker 进程按需代理；服务与事件语义跨进程保持一致。
-
-**服务端（主进程：暴露服务）**
+**目的**：昂贵共享能力（模型、缓存客户端、连接池）留在主进程，worker 进程代理调用；服务与事件语义跨进程一致。
 
 ```python
+# 主进程：暴露服务
 from cordis_py import Bridge, Context
+server, addr = await Bridge.serve()                          # TCP host:port 或 unix=套接字路径
+server.expose(root, "model", ModelService(), version="1.0")  # 可逆：fiber dispose 自动反注册
 
-server, addr = await Bridge.serve()                 # TCP 默认 127.0.0.1:0
-server.expose(root, "model", ModelService(), version="1.0")   # 可逆注册
+# worker：代理调用 + 事件
+client = await Bridge.connect(addr)                          # "host:port" 或 Unix 路径
+result = await client.proxy("model").predict(payload)        # await proxy.method(*args)
+client.send_event("model/updated", "v2")                     # 事件贯通（fire-and-forget）
+disposer = client.on_event("train/event", handler)           # 接收对端事件（随 disposer 移除）
+await client.close()                                         # 幂等：bye → 未决调用失败
 ```
 
-**客户端（worker：代理调用 + 事件）**
-
-```python
-client = await Bridge.connect(addr)                 # "host:port" 或 Unix socket 路径
-result = await client.proxy("model").predict(payload)   # 异步远程调用
-client.send_event("model/updated", "v2")                # 事件贯通（fire-and-forget）
-disposer = client.on_event("train/event", handler)      # 接收对端事件
-await client.close()                                    # 幂等：bye → 未决调用失败
-```
-
-**边界与参数**
-
-| API / 语义 | 参数 | 说明 |
-| --- | --- | --- |
-| `Bridge.serve(host, port, unix, name)` | `unix` 给定则为 Unix socket 监听；返回 `(bridge, address)` | 单连接（MVP） |
-| `Bridge.connect(address, name)` | `host:port` 或 Unix 路径（含 `/` 判定） | 连接后 hello 握手（protocol=1，5s 超时） |
-| `expose(ctx, name, service, *, version)` | 服务对象；`version` 供契约 | 返回 Fiber；dispose 自动反注册；重复暴露抛 `ServiceConflict` |
-| `proxy(name)` | 服务名 | `await proxy.method(*args)`；可调用对象直接 `await proxy(*args)` |
-| `send_event / on_event` | 事件名 + 参数 | 仅 JSON 兼容值；断连时 `send_event` 静默、调用抛 `RemoteClosed` |
-| 错误 | — | 远端异常重建 `RemoteError`（类型名/消息）；协议损坏抛 `ProtocolError`；同步调用链抛 `AsyncRequiredError` |
+**边界**：hello 握手（protocol=1，5s 超时，不兼容关闭）；仅 JSON 兼容值；远端异常重建 `RemoteError`（类型名/消息），断连后调用抛 `RemoteClosed`，协议损坏抛 `ProtocolError`；同步调用链抛 `AsyncRequiredError`；无认证/加密层，限受信内网。
 
 ---
 
-## 核心 API 速查
+## 7. 扩展实战：给应用加 JWT 认证
+
+**思路**：认证在 cordis_py 里不是“内置功能”，而是**一个名为 `auth` 的服务契约**——`authenticate(request) -> None | JSONResponse`（成功写入 `request.state.tenant` 并返回 None，失败返回响应）。因此换认证方式 = 写一个实现同契约的插件，替换配置中的插件行。其余插件（http 的 gate、tasks、quota）**零改动**。
+
+**第一步：编写插件（examples/task_api/plugins/jwt_auth.py，标准库 HS256）**
+
+```python
+class JwtAuthService:
+    def __init__(self, secret, issuer="cordis-task-api", audience="cordis-task-api", public_paths=()):
+        self._secret = secret.encode()
+        ...
+
+    def issue(self, tenant, *, ttl=3600) -> str:      # 签发（管理端/测试用）
+        header = {"alg": "HS256", "typ": "JWT"}
+        payload = {"sub": tenant, "iss": ..., "aud": ..., "exp": time.time() + ttl}
+        signing = b".".join([_b64(json.dumps(header)), _b64(json.dumps(payload))])
+        signature = hmac.new(self._secret, signing, hashlib.sha256).digest()
+        return (signing + b"." + _b64(signature)).decode()
+
+    def authenticate(self, request) -> JSONResponse | None:   # 契约入口
+        if request.url.path in self._public_paths: return None
+        token = request.headers.get("authorization", "")[7:]  # "Bearer xxx"
+        # 验段数 → hmac.compare_digest 验签 → 校验 iss/aud/exp → request.state.tenant = sub
+        ...
+
+def plugin(ctx: Context, config: dict) -> None:
+    ctx.provide("auth", JwtAuthService(secret=config["secret"], ...))   # 同名服务即可替换
+```
+
+**第二步：注册使用（app.yml 替换 auth 行——其余 8 个插件不动）**
+
+```yaml
+  - id: auth
+    url: plugins.jwt_auth:plugin            # 原 plugins.auth:plugin
+    config:
+      secret: dev-secret-change-me          # 生产用环境变量/密钥管理注入
+      issuer: task-api
+      audience: task-api
+      public_paths: [/api/health]           # 公开路径白名单
+```
+
+**第三步：验证**
+
+```python
+from plugins.jwt_auth import JwtAuthService
+service = JwtAuthService(secret="dev-secret-change-me", issuer="task-api", audience="task-api")
+token = service.issue("acme")
+# curl -H "Authorization: Bearer <token>" http://127.0.0.1:8000/api/tasks → 200
+```
+
+```bash
+pytest examples/task_api/tests/test_jwt_auth.py -q   # 成功/缺失/篡改/过期/公开路径 5 项测试
+```
+
+**为什么能无缝替换**：http 的 gate 只认 `ctx.get("auth")` 的接口（而不是 import 某个类）；worker 侧（tasks/quota/audit）不关心认证实现——这就是“服务契约 + 声明式装配”的扩展力：**改配置即可换实现，插件间只认接口不认类**。
+
+**同样的模式可以继续扩展**：把 `TaskStore` 换 SQLite/PG（存储插件）、把 `audit` 换 OpenTelemetry（观测插件）、新增“签名校验”瀑布插件（限流同款）——都是“写一个插件 + 配置加一行”。
+
+---
+
+## 8. 核心 API 速查
 
 | 想做什么 | 用什么 | 一句话说明 |
 | --- | --- | --- |
@@ -180,9 +332,9 @@ await client.close()                                    # 幂等：bye → 未�
 | 开发期热替换 | `HMR(loader)` + `watch([...])` | 依赖图分类 + 事务式重载，失败回滚 |
 | 插件自动发现 | `discover()` / `load_entry_points()` | Python 包入口点（插件市场形态） |
 
-## 质量与边界
+## 9. 质量与边界
 
-- **验证**：100+ 单元/集成测试（生命周期、事件、契约、HMR 依赖图、作用域路由、Bridge 协议、watcher 原子保存）；ruff 全绿；`py.typed` 随包发布；生产案例带 6 个 e2e 集成测试与实测 curl 序列。
+- **验证**：103 个核心单元/集成测试 + 案例 11 个测试（含 JWT 契约、watcher 原子保存、Bridge 协议、HMR 依赖图）；ruff 全绿；`py.typed` 随包发布。
 - **可选依赖**：PyYAML / watch / pydantic 均为 extra，核心零第三方运行时依赖（仅 `packaging` 用于版本约束）。
 - **诚实边界**：作用域隔离是协调式（事件/服务可见性），**不是**恶意代码的安全边界（OS 级沙箱属宿主职责）；Bridge 无认证/加密层，限受信内网；跨进程调用仅 JSON 兼容值；HMR 仅纯 Python 源码模块。
 - **版本**：`0.9.0`；0.x 阶段 API 按语义化演进，1.0 前事项：对外契约类型化（mypy）、CI、并发不变量压测。

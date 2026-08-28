@@ -7,6 +7,11 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = ["packaging>=24"]
 
+[project.urls]
+Homepage = "https://github.com/xiwen-haochi/cordis_py"
+Repository = "https://github.com/xiwen-haochi/cordis_py"
+Issues = "https://github.com/xiwen-haochi/cordis_py/issues"
+
 [project.optional-dependencies]
 yaml = ["pyyaml>=6.0"]
 pydantic = ["pydantic>=2"]

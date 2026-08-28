@@ -14,14 +14,17 @@ class Service:
     """注册到 Cordis Context 上的服务基类。
 
     子类调用 ``super().__init__(ctx, name)``，或使用类级 ``provide`` 属性指定服务名。
+    类级 ``version`` 属性可声明服务版本，构造参数 *version* 优先级更高。
     """
 
     provide: str | None = None
+    version: str | None = None
 
-    def __init__(self, ctx: Any, name: str | None = None) -> None:
+    def __init__(self, ctx: Any, name: str | None = None, *, version: str | None = None) -> None:
         self.ctx = ctx
         self.name = name or self.provide or type(self).__name__.lower()
-        ctx.provide(self.name, self)
+        self.version = version if version is not None else type(self).version
+        ctx.provide(self.name, self, version=self.version)
 
     def resolve_config(self, base: Any = None, head: Any = None) -> Any:
         """合并本服务名上的拦截配置。
@@ -57,6 +60,26 @@ def _attach_inject(target: Any, deps: list[str] | Mapping[str, Any]) -> Any:
             combined.setdefault(name, config)
     target.inject = combined  # type: ignore[attr-defined]
     return target
+
+
+def require(name: str, constraint: Any):
+    """声明插件对服务的版本或接口约束。
+
+    *constraint* 为 PEP 440 specifier 字符串（如 ``">=1.0"``）或接收服务对象的
+    callable 谓词（如 ``lambda svc: hasattr(svc, "query")``，返回真值即满足）。
+    装饰器可多次叠加：同名服务的多个约束为 AND 关系；也可以与类属性
+    ``requirements`` 并存（装饰器会合并已有声明）。
+    约束不满足时插件保持 PENDING（软等待），不构成错误。
+    """
+
+    def decorator(target: T) -> T:
+        raw = getattr(target, "requirements", None)
+        reqs = dict(raw) if isinstance(raw, Mapping) else {}
+        reqs.setdefault(name, []).append(constraint)
+        target.requirements = reqs  # type: ignore[attr-defined]
+        return target
+
+    return decorator
 
 
 @overload
@@ -101,4 +124,4 @@ def inject(deps: str | list[str] | Mapping[str, Any], /):
     return decorator
 
 
-__all__ = ["Service", "inject"]
+__all__ = ["Service", "inject", "require"]

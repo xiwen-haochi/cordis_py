@@ -16,6 +16,7 @@ from .utils import (
     drive_sync,
     has_running_loop,
     normalize_sync_error,
+    resolve_plugin_config,
 )
 
 if TYPE_CHECKING:
@@ -92,6 +93,7 @@ class Fiber:
         plugin: Any,
         config: Any,
         inject: dict[str, Any] | None = None,
+        requirements: dict[str, list[Any]] | None = None,
         *,
         uid: int = 0,
         is_root: bool = False,
@@ -100,6 +102,7 @@ class Fiber:
         self.plugin = plugin
         self.config = config
         self.inject = inject or {}
+        self.requirements = requirements or {}
         self.uid = uid
         self.is_root = is_root
         self.state = FiberState.ACTIVE if is_root else FiberState.PENDING
@@ -112,6 +115,7 @@ class Fiber:
         self._error: Exception | None = None
         self._inertia: asyncio.Task[None] | None = None
         self._effect_once: set[int] = set()
+        self._unsatisfied: dict[str, str] = {}
 
     @property
     def name(self) -> str:
@@ -203,6 +207,7 @@ class Fiber:
         return dispose
 
     async def _invoke_plugin(self) -> Any:
+        config = resolve_plugin_config(self.plugin, self.config)
         plugin = self.plugin
         if plugin is None:
             return None
@@ -211,12 +216,12 @@ class Fiber:
 
             if issubclass(plugin, Service):
                 return plugin(self.ctx)
-            return plugin(self.ctx, self.config)
+            return plugin(self.ctx, config)
         if callable(plugin):
-            return await await_maybe(plugin(self.ctx, self.config))
+            return await await_maybe(plugin(self.ctx, config))
         apply = getattr(plugin, "apply", None)
         if callable(apply):
-            return await await_maybe(apply(self.ctx, self.config))
+            return await await_maybe(apply(self.ctx, config))
         raise TypeError(f"invalid plugin: {plugin!r}")
 
     def _register_plugin_result(self, result: Any) -> None:
@@ -236,10 +241,20 @@ class Fiber:
     def _compute_target(self) -> tuple[str, ...] | None:
         if not self.inject:
             return ()
+        reasons = {}
         for name in self.inject:
-            if not self.ctx._has_active_service(name):
-                return None
+            reason = self.ctx._requirement_reason(name, self.requirements.get(name, []))
+            if reason is not None:
+                reasons[name] = reason
+        self._unsatisfied = reasons
+        if reasons:
+            return None
         return tuple(sorted(self.inject))
+
+    @property
+    def unsatisfied(self) -> dict[str, str]:
+        """最近一次依赖评估中不满足的服务及其原因（软等待诊断）。"""
+        return dict(self._unsatisfied)
 
     def _schedule(self, coro: Awaitable[None]) -> None:
         """双模式调度：有事件循环时后台执行，否则内联同步驱动。"""
@@ -277,7 +292,7 @@ class Fiber:
         self.committed = {
             name: self.ctx._get_active_service_value(name)
             for name in self.inject
-            if self.ctx._has_active_service(name)
+            if self.ctx._requirement_reason(name, self.requirements.get(name, [])) is None
         }
         try:
             result = await self._invoke_plugin()

@@ -6,11 +6,13 @@ from .context import Context
 from .discovery import discover, load_entry_points
 from .errors import (
     AsyncRequiredError,
+    ConfigValidationError,
     CordisError,
     InactiveAccess,
     InactiveEffect,
     InvalidEffect,
     InvalidPlugin,
+    InvalidRequirement,
     ServiceConflict,
     UndeclaredAccess,
 )
@@ -19,12 +21,13 @@ from .fiber import Fiber, FiberState
 from .hmr import HMR
 from .loader import Entry, Loader
 from .registry import RegistryService
-from .service import Service, inject
+from .service import Service, inject, require
 from .utils import Disposable, Effect, Inject
 
 __all__ = [
     "HMR",
     "AsyncRequiredError",
+    "ConfigValidationError",
     "Context",
     "CordisError",
     "DispatchMode",
@@ -39,6 +42,7 @@ __all__ = [
     "Inject",
     "InvalidEffect",
     "InvalidPlugin",
+    "InvalidRequirement",
     "Loader",
     "RegistryService",
     "Service",
@@ -47,6 +51,7 @@ __all__ = [
     "discover",
     "inject",
     "load_entry_points",
+    "require",
 ]
 
 __version__ = "0.2.0"

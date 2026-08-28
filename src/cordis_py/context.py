@@ -20,10 +20,12 @@ from .utils import (
     Effect,
     Inject,
     await_maybe,
+    constraint_matches,
     has_running_loop,
     merge_config,
     normalize_sync_error,
     resolve_inject,
+    resolve_requirements,
 )
 
 
@@ -32,6 +34,7 @@ class ServiceEntry:
     name: str
     value: Any
     provider: Fiber
+    version: str | None = None
 
 
 @dataclass
@@ -153,18 +156,34 @@ class Context:
         if fiber in self._root._fibers:
             self._root._fibers.remove(fiber)
 
-    def provide(self, name: str, value: Any) -> Disposable:
+    def _requirement_reason(self, name: str, constraints: list[Any]) -> str | None:
+        """返回服务 *name* 的约束不满足原因；满足或无需约束时返回 ``None``。
+
+        软等待语义：服务未提供与约束不满足都不构成错误，消费者保持 PENDING，
+        提供方变化后由响应式机制重新评估。
+        """
+        entry = self._root._services.get(self._service_key(name))
+        if entry is None or entry.provider.state != FiberState.ACTIVE:
+            return "服务未提供"
+        for constraint in constraints:
+            ok, reason = constraint_matches(constraint, entry.value, entry.version)
+            if not ok:
+                return reason
+        return None
+
+    def provide(self, name: str, value: Any, *, version: str | None = None) -> Disposable:
         """注册由当前 fiber 拥有的服务。
 
         只有属主 fiber 处于 ACTIVE 状态时，该服务才对依赖方可见；
-        fiber 卸载时会自动移除该服务。
+        fiber 卸载时会自动移除该服务。*version* 用于消费方的版本约束校验
+        （见 :func:`require`）。
         """
         fiber = self.fiber
         key = self._service_key(name)
         entry = self._root._services.get(key)
         if entry is not None and entry.provider is not fiber:
             raise ServiceConflict(name, entry.provider.name)
-        self._root._services[key] = ServiceEntry(name, value, fiber)
+        self._root._services[key] = ServiceEntry(name, value, fiber, version)
         fiber.store.add(name)
         if fiber.state == FiberState.ACTIVE:
             self._notify([name])
@@ -224,11 +243,13 @@ class Context:
         if not callable(plugin) and not hasattr(plugin, "apply"):
             raise TypeError(f"invalid plugin: {plugin!r}")
         inject = resolve_inject(plugin)
+        requirements = resolve_requirements(plugin, inject)
         fiber = Fiber(
             self,
             plugin,
             config,
             inject,
+            requirements,
             uid=self._next_uid(),
         )
         fiber.ctx = self._make_plugin_context(fiber)

@@ -66,3 +66,30 @@ class AsyncRequiredError(CordisError):
             "ASYNC_REQUIRED",
             f"{where} requires an event loop; please run it under asyncio or use the async API",
         )
+
+
+class InvalidRequirement(CordisError):
+    """当插件声明的服务约束无效时抛出。
+
+    约束声明是声明期元数据：服务名未在 ``inject`` 中声明、PEP 440 specifier
+    语法错误、或约束形态不受支持，都在插件注册时立即报错。
+    """
+
+    def __init__(self, name: str, reason: str) -> None:
+        super().__init__(
+            "INVALID_REQUIREMENT",
+            f"invalid requirement for {name!r}: {reason}",
+        )
+
+
+class ConfigValidationError(CordisError):
+    """当插件配置未通过 ``Config`` 校验器时抛出。
+
+    携带插件名与校验器的原始错误消息，便于定位是哪个插件、哪条配置失败。
+    """
+
+    def __init__(self, plugin: str, reason: str) -> None:
+        super().__init__(
+            "CONFIG_VALIDATION",
+            f"invalid config for plugin {plugin!r}: {reason}",
+        )

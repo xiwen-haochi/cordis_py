@@ -12,6 +12,7 @@ Cordis 的 Python 实现：面向动态系统的时空可组合性（spatiotempo
 - **Service 基类**：继承 `Service` 并调用 `super().__init__(ctx, name)` 自动注册服务。
 - **Per-realm 隔离**：`ctx.isolate(name, realm)` 可隔离同名服务。
 - **Intercept 配置拦截**：`ctx.intercept(name, config)` 沿上下文链合并服务级配置（祖先条目先应用、就近覆盖），插件 inject 声明中的非空配置自动并入，`Service.resolve_config()` 可读取合并结果。
+- **契约校验**：`Service.version` / `ctx.provide(version=)` 声明版本，`@require` 声明 PEP 440 版本约束或接口谓词（不满足时软等待，`fiber.unsatisfied` 可诊断）；插件 `Config` 属性支持 callable 与 pydantic（可选）配置校验。
 - **同步/异步双模式**：有运行事件循环时后台异步调度；无事件循环时生命周期内联驱动（`dispose_sync` / `restart_sync` / `update_sync`），遇到需要事件循环的操作抛出 `AsyncRequiredError`。
 - **声明式 Loader**：支持 JSON/YAML/TOML 配置、增量 reconcile、disable/enable。
 - **基础 HMR**：开发期针对单个 Loader Entry 的模块重载。
@@ -77,6 +78,30 @@ root.fiber.dispose_sync()
 ```
 
 若同步调用链中遇到需要事件循环的操作（异步插件、异步效果、异步事件监听器），会抛出 `AsyncRequiredError`，提示改用异步 API。
+
+### 契约校验
+
+提供方声明版本，消费方用 `@require` 声明约束；约束不满足时消费者保持等待（软等待），提供方变化后自动重新评估：
+
+```python
+from cordis_py import Context, Service, inject, require
+
+
+class Model(Service):
+    version = "1.0.0"
+
+    def __init__(self, ctx):
+        super().__init__(ctx, "model")
+
+
+@inject("model")
+@require("model", ">=1.0,<2.0")                    # PEP 440 版本约束
+@require("model", lambda svc: hasattr(svc, "hello"))  # 接口谓词
+def consumer(ctx: Context, config: dict):
+    print(ctx.model)
+```
+
+配置校验：给插件挂 `Config` 属性（callable 校验/转换，或可选安装 pydantic 后用模型类）。
 
 ## 文档
 

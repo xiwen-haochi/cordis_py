@@ -7,7 +7,7 @@ import inspect
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable, Mapping
 from typing import Any, TypeVar
 
-from .errors import AsyncRequiredError
+from .errors import AsyncRequiredError, ConfigValidationError, InvalidRequirement
 
 T = TypeVar("T")
 
@@ -133,3 +133,100 @@ def merge_config(base: Any, override: Any) -> Any:
     if isinstance(base, Mapping) and isinstance(override, Mapping):
         return {**base, **override}
     return override
+
+
+def normalize_constraint(name: str, constraint: Any) -> Any:
+    """规范化单个服务约束。
+
+    ``str`` 按 PEP 440 解析为 :class:`packaging.specifiers.SpecifierSet`，
+    ``callable`` 原样保留（接收服务对象，返回真值即满足）；其他形态抛出
+    :class:`InvalidRequirement`。
+    """
+    if isinstance(constraint, str):
+        from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+        try:
+            return SpecifierSet(constraint)
+        except InvalidSpecifier as exc:
+            raise InvalidRequirement(name, f"invalid specifier {constraint!r}: {exc}") from exc
+    if callable(constraint):
+        return constraint
+    raise InvalidRequirement(name, f"unsupported constraint type: {type(constraint).__name__}")
+
+
+def constraint_matches(constraint: Any, value: Any, version: str | None) -> tuple[bool, str | None]:
+    """检查单个约束是否满足，返回 ``(满足与否, 原因)``。
+
+    版本约束（:class:`SpecifierSet`）：提供方未声明版本或版本号非法视为不满足
+    （保守语义，等提供方声明版本后自动激活）。
+    接口谓词（callable）：谓词抛异常视为不满足，原因中记录异常消息。
+    """
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import InvalidVersion
+
+    if isinstance(constraint, SpecifierSet):
+        if version is None:
+            return False, "服务未声明版本"
+        try:
+            ok = constraint.contains(version)
+        except InvalidVersion:
+            return False, f"服务版本 {version!r} 非法"
+        if ok:
+            return True, None
+        return False, f"版本 {version!r} 不满足约束 {constraint}"
+    try:
+        ok = bool(constraint(value))
+    except Exception as exc:  # noqa: BLE001
+        # 谓词异常按“不满足”处理（软等待语义），原因中保留异常消息便于诊断。
+        return False, f"接口谓词异常: {exc}"
+    return ok, None if ok else "接口谓词不满足"
+
+
+def resolve_requirements(plugin: Any, inject: dict[str, Any]) -> dict[str, list[Any]]:
+    """读取并规范化插件的 ``requirements`` 声明。
+
+    声明来源：``@require`` 装饰器或类属性 ``requirements``（服务名 -> 约束或约束列表）。
+    约束声明的服务名必须在 ``inject`` 中，否则立即抛出 :class:`InvalidRequirement`。
+    """
+    raw = getattr(plugin, "requirements", None) or {}
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"invalid requirements declaration: {raw!r}")
+    out: dict[str, list[Any]] = {}
+    for name, constraints in raw.items():
+        if name not in inject:
+            raise InvalidRequirement(name, "service is not declared in inject")
+        if isinstance(constraints, (str, Callable)):
+            constraints = [constraints]
+        if isinstance(constraints, (str, bytes)) or not isinstance(constraints, Iterable):
+            raise InvalidRequirement(name, "constraints must be a string, callable, or a list of them")
+        out[name] = [normalize_constraint(name, c) for c in constraints]
+    return out
+
+
+def resolve_plugin_config(plugin: Any, config: Any) -> Any:
+    """按插件 ``Config`` 属性校验并转换配置，返回转换后的配置。
+
+    支持两种形态：
+
+    - callable（普通函数）：``Config(config)``，异常即校验失败；返回 ``None`` 表示
+      校验通过且不做转换；
+    - pydantic 模型类（检测 ``model_validate``）：走模型校验。
+
+    校验失败抛出 :class:`ConfigValidationError`；形态不可识别抛出 :class:`TypeError`。
+    """
+    schema = getattr(plugin, "Config", None)
+    if schema is None:
+        return config
+    name = getattr(plugin, "name", None) or getattr(plugin, "__name__", type(plugin).__name__)
+    if inspect.isclass(schema) and hasattr(schema, "model_validate"):
+        try:
+            return schema.model_validate(config)
+        except Exception as exc:
+            raise ConfigValidationError(name, str(exc)) from exc
+    if callable(schema):
+        try:
+            result = schema(config)
+        except Exception as exc:
+            raise ConfigValidationError(name, str(exc)) from exc
+        return config if result is None else result
+    raise TypeError(f"invalid plugin config schema for {name!r}")

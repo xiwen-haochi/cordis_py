@@ -180,6 +180,12 @@ await client.close()
 
 帧协议为 JSON-lines：仅 JSON 兼容值；断连后调用抛 `RemoteClosed`，远端异常重建为 `RemoteError`。
 
+## 示例应用
+
+- [插件化多租户任务 API（FastAPI）](examples/task_api/README.md)：Loader 声明装配
+  9 个插件、请求瀑布链中间件、per-realm 租户隔离、契约校验、限流/审计/指标、
+  HMR 热替换——接近生产的完整案例。
+
 ## 项目总结与路线图
 
 规划内的全部功能点（0.1.0 → 0.8.0）已完成：核心运行时 → 同步/异步双模式与 intercept → 契约校验 → 配置 overlay → HMR 依赖图分类 → HMR 文件监听 → 作用域隔离 → 跨进程 Bridge。总结与后续优化方向（P0 生态验证 / P1 质量 / P2 能力面 / P3 可维护）见：

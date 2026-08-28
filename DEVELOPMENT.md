@@ -48,6 +48,7 @@ cordis_py/
 ├── README.md                      # 项目说明与快速开始
 ├── pyproject.toml                 # 包配置与构建配置
 ├── main.py                        # 可运行演示
+├── examples/                    # 示例应用（插件化 FastAPI 案例）
 ├── docs/
 │   ├── cordis_py_intro.html       # 介绍与实现思路
 │   └── cordis_py_domains_and_design.html  # 应用领域与设计优化分析

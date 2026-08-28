@@ -1,0 +1,49 @@
+plugins:
+  # 装配顺序刻意非依赖序：tasks 依赖 routes / registry，
+  # 提供者稍后才加载 —— 依赖响应机制保证它自动激活。
+  - id: logger
+    url: plugins.logger_plugin:plugin
+    config:
+      level: INFO
+
+  - id: tasks
+    url: plugins.tasks:plugin
+    config:
+      page_size: 20
+
+  - id: tenant
+    url: plugins.tenant:plugin
+    config:
+      tenants: [acme, globex]
+
+  - id: http
+    url: plugins.http_service:plugin
+    config:
+      title: Cordis Task API
+
+  - id: auth
+    url: plugins.auth:plugin
+    config:
+      keys:
+        acme: key-acme
+        globex: key-globex
+      public_paths: [/api/health]
+
+  - id: quota
+    url: plugins.quota:plugin
+    config:
+      limit: 5
+      window: 30
+
+  - id: audit
+    url: plugins.audit:plugin
+    config:
+      event_prefix: ""
+
+  - id: metrics
+    url: plugins.metrics:plugin
+    config:
+      namespace: taskapi
+
+  - id: health
+    url: plugins.health:plugin

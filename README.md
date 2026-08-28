@@ -12,13 +12,13 @@ PyPI 发布名为 `cordis-python`（导入名 `cordis_py`），仓库：<https:/
 
 ## 1. 为什么存在（三个痛点 → 三个承诺）
 
-| 传统动态系统的痛点 | cordis_py 的承诺 |
-| --- | --- |
-| 功能“装上去容易、拆下来难” | **一切可逆**：卸载插件 = 自动回收它注册的所有东西（服务、事件、路由、资源），无残留 |
-| 组件初始化顺序写死，换顺序/加组件就是重构 | **依赖响应式**：先装消费者后装提供者也能自动激活；装配顺序无关 |
-| 能力都在主程序里，扩展 = 改核心代码 | **声明式组合**：应用 = 配置（插件列表）+ 插件（代码）；新增能力 = 加一行配置、装一个插件 |
+| 传统动态系统的痛点                        | cordis_py 的承诺                                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 功能“装上去容易、拆下来难”                | **一切可逆**：卸载插件 = 自动回收它注册的所有东西（服务、事件、路由、资源），无残留      |
+| 组件初始化顺序写死，换顺序/加组件就是重构 | **依赖响应式**：先装消费者后装提供者也能自动激活；装配顺序无关                           |
+| 能力都在主程序里，扩展 = 改核心代码       | **声明式组合**：应用 = 配置（插件列表）+ 插件（代码）；新增能力 = 加一行配置、装一个插件 |
 
-设计基准：论文《A Programming Paradigm for Spatiotemporal Composability》与 Node.js 版 Cordis v4（不参考任何其他 Python Cordis 实现）。
+设计基准：论文《A Programming Paradigm for Spatiotemporal Composability》与 Node.js 版 Cordis v4。
 
 ## 2. 核心概念（30 秒总览）
 
@@ -42,54 +42,81 @@ PyPI 发布名为 `cordis-python`（导入名 `cordis_py`），仓库：<https:/
 
 ### 2.1 概念详解
 
-| 概念 | 是什么 | 为什么 | 怎么用 |
-| --- | --- | --- | --- |
-| **Context** | 依赖容器（根或子）。插件拿到的每个 `ctx` 都是根链上的一个节点 | 隔离与服务查找都发生在上下文链上（`isolate` / `intercept` / `filtered` 返回子上下文） | `root = Context()`；插件函数第一参数 |
-| **Fiber** | 一个插件的运行实例，带生命周期状态机（PENDING → ACTIVE → UNLOADING → DISPOSED） | 状态公开可诊断（`fiber.state` / `fiber.unsatisfied`），可等待（`await fiber`）、可重启（`restart` / `update`）、可卸载（`dispose`） | `ctx.plugin(plugin, config)` 返回 Fiber |
-| **效果（Effect）** | 注册到一个 fiber 的可逆动作：`disposer` / 同步迭代 / 异步迭代 | 可逆副作用的账本；fiber 卸载按 LIFO 逐个执行 | `ctx.effect(lambda: undo)`；服务提供、事件监听、路由注册内部都登记为效果 |
-| **服务与注入** | `provide(name, value)` 注册；`ctx.get(name)` 读取；`@inject("name")` 声明消费 | 服务的可见性由“值的提供者是否 ACTIVE”决定——这是响应式依赖的载体 | `ctx.provide("db", db)`；`@inject(["db","log"]) def plugin(ctx, config)` |
-| **契约校验** | `provide(version=)` + `@require("svc", ">=1.0")` / 接口谓词 | 依赖升级的护栏；约束不满足 = 软等待，提供方变化后自动重评 | `@require("tenants", ">=1.0")` |
-| **事件** | `on` / `once` / `emit` / `parallel` / `serial` / `bail` / `waterfall` | 插件间解耦通信；`waterfall` 是中间件链（不调用 `next()` 即拦截） | `ctx.on("http/request", handler)`；监听器随插件 fiber 自动回收 |
-| **配置** | 插件挂 `Config` 属性（callable 或 pydantic 模型，可选）校验/转换 | 配置错误在装载期报错，而不是运行期诡异行为 | `plugin.Config = validate`；`internal/config` waterfall 可在激活前改写（租户派生） |
-| **Loader** | 从配置装配：`reconcile` 增量协调、`disable/enable`、JSON/YAML/TOML | 应用状态与配置描述始终一致 | `Loader(root).include("app.yml")` |
-| **HMR** | 开发期热替换：模块依赖图分类 + 事务式重载 + 失败回滚 | 改插件源码不重启进程（见场景 B） | `HMR(loader)` + `watch(["src"])` |
-| **隔离** | `isolate`（服务 realm）/ `filtered` + scope（事件可见性）/ 契约 | 多租户与不可信插件边界（协调式，非 OS 沙箱） | 见场景 A 与扩展实战 |
-| **Bridge** | 跨进程服务代理与事件贯通（JSON-lines 帧协议） | 昂贵共享能力留主进程，worker 代理调用 | 见场景 C |
+| 概念               | 是什么                                                                          | 为什么                                                                                                                              | 怎么用                                                                             |
+| ------------------ | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Context**        | 依赖容器（根或子）。插件拿到的每个 `ctx` 都是根链上的一个节点                   | 隔离与服务查找都发生在上下文链上（`isolate` / `intercept` / `filtered` 返回子上下文）                                               | `root = Context()`；插件函数第一参数                                               |
+| **Fiber**          | 一个插件的运行实例，带生命周期状态机（PENDING → ACTIVE → UNLOADING → DISPOSED） | 状态公开可诊断（`fiber.state` / `fiber.unsatisfied`），可等待（`await fiber`）、可重启（`restart` / `update`）、可卸载（`dispose`） | `ctx.plugin(plugin, config)` 返回 Fiber                                            |
+| **效果（Effect）** | 注册到一个 fiber 的可逆动作：`disposer` / 同步迭代 / 异步迭代                   | 可逆副作用的账本；fiber 卸载按 LIFO 逐个执行                                                                                        | `ctx.effect(lambda: undo)`；服务提供、事件监听、路由注册内部都登记为效果           |
+| **服务与注入**     | `provide(name, value)` 注册；`ctx.get(name)` 读取；`@inject("name")` 声明消费   | 服务的可见性由“值的提供者是否 ACTIVE”决定——这是响应式依赖的载体                                                                     | `ctx.provide("db", db)`；`@inject(["db","log"]) def plugin(ctx, config)`           |
+| **契约校验**       | `provide(version=)` + `@require("svc", ">=1.0")` / 接口谓词                     | 依赖升级的护栏；约束不满足 = 软等待，提供方变化后自动重评                                                                           | `@require("tenants", ">=1.0")`                                                     |
+| **事件**           | `on` / `once` / `emit` / `parallel` / `serial` / `bail` / `waterfall`           | 插件间解耦通信；`waterfall` 是中间件链（不调用 `next()` 即拦截）                                                                    | `ctx.on("http/request", handler)`；监听器随插件 fiber 自动回收                     |
+| **配置**           | 插件挂 `Config` 属性（callable 或 pydantic 模型，可选）校验/转换                | 配置错误在装载期报错，而不是运行期诡异行为                                                                                          | `plugin.Config = validate`；`internal/config` waterfall 可在激活前改写（租户派生） |
+| **Loader**         | 从配置装配：`reconcile` 增量协调、`disable/enable`、JSON/YAML/TOML              | 应用状态与配置描述始终一致                                                                                                          | `Loader(root).include("app.yml")`                                                  |
+| **HMR**            | 开发期热替换：模块依赖图分类 + 事务式重载 + 失败回滚                            | 改插件源码不重启进程（见场景 B）                                                                                                    | `HMR(loader)` + `watch(["src"])`                                                   |
+| **隔离**           | `isolate`（服务 realm）/ `filtered` + scope（事件可见性）/ 契约                 | 多租户与不可信插件边界（协调式，非 OS 沙箱）                                                                                        | 见场景 A 与扩展实战                                                                |
+| **Bridge**         | 跨进程服务代理与事件贯通（JSON-lines 帧协议）                                   | 昂贵共享能力留主进程，worker 代理调用                                                                                               | 见场景 C                                                                           |
 
 ---
 
-## 3. 第一个插件（每个步骤都注释了为什么）
+## 3. 第一个插件（完整可运行：异步队列工作者）
+
+展示四个核心行为：响应式注入（先装消费者）、服务、事件、**后台任务随卸载可逆取消**。
+与场景 A/B/C 不重叠，且能直接跑：
 
 ```python
 import asyncio
-from cordis_py import Context, Service, inject
+from cordis_py import Context, inject
 
 
-class Greeter(Service):                       # 服务 = 能力的最小单元
-    def __init__(self, ctx: Context):
-        super().__init__(ctx, "greeter")      # 构造即注册为根容器服务（可逆）
-
-    def hello(self, name: str) -> str:
-        return f"Hello, {name}!"
+def queue_provider(ctx: Context, config: dict):
+    """插件一：提供服务 —— 一个异步队列（演示用）。"""
+    ctx.provide("queue", asyncio.Queue())
 
 
-@inject("greeter")                            # 声明依赖：greeter 未就绪时本插件不激活
-def greeter_plugin(ctx: Context, config: dict):
-    # ctx.greeter 在插件激活后才可读；事件监听器随本插件 fiber 回收
-    ctx.on("app/ready", lambda msg: print(ctx.greeter.hello(msg)))
+@inject("queue")                                # 声明依赖：queue 未就绪时本插件不激活
+def worker_plugin(ctx: Context, config: dict):
+    """插件二：消费队列 —— 后台任务 + 事件发布；卸载时可逆取消。"""
+    queue = ctx.queue                           # 激活后才可读（依赖已满足）
+
+    async def consume():                        # 后台任务：随插件激活启动
+        while True:
+            item = await queue.get()
+            result = {"item": item, "processed": True}
+            ctx.emit("job/done", result)        # 事件：旁观者解耦监听
+
+    task = asyncio.create_task(consume())
+
+    def undo() -> None:
+        task.cancel()                           # 卸载动作：撤销后台任务
+
+    ctx.effect(lambda: undo)                    # 登记为可逆效果（fiber dispose 时执行）
     return None
 
 
 async def main():
     root = Context()
-    await root.plugin(Greeter)                # 装服务（先装消费者也能顺序颠倒）
-    await root.plugin(greeter_plugin)
-    root.emit("app/ready", "Cordis")          # 事件驱动
-    await root.fiber.dispose()                # LIFO 回收：监听器、服务全部移除
+    heard = []
+    root.on("job/done", lambda result: heard.append(result["item"]))
+
+    # 先装消费者（worker），后装提供者（queue）——顺序无关，自动激活
+    await root.plugin(worker_plugin)            # 依赖未满足：软等待
+    await root.plugin(queue_provider)           # 提供者出现 → worker 激活并开始消费
+    await asyncio.sleep(0.05)                   # 允许后台激活完成
+
+    root.services["queue"].put_nowait("task-1") # 投递任务
+    await asyncio.sleep(0.05)
+    assert heard == ["task-1"]                  # 消费链：queue → worker → 事件 → 旁听者
+
+    await root.fiber.dispose()                  # LIFO 回收：消费任务被取消（可逆）
 
 
 asyncio.run(main())
 ```
+
+关键点：
+
+- **`ctx.effect(lambda: undo)` 的写法是刻意的**：`effect` 会立即执行回调并收集返回值作为 disposer——所以必须返回`undo` 函数本身；写成 `ctx.effect(lambda: task.cancel())` 会在注册时立即取消任务并因返回值非法而报错；
+- 服务/事件/任务全部登记为效果：`dispose()` 后应用无任何残留（打印、网络、定时器、监听器）。
 
 没有事件循环时用同步 API：`root.fiber.dispose_sync()`（其余为 `restart_sync` / `update_sync`；遇到必须事件循环的操作会抛 `AsyncRequiredError`）。
 
@@ -176,17 +203,17 @@ ctx.effect(lambda: undo_all)            # dispose 时逐一撤销
 
 ### 4.5 插件职责与配置参数
 
-| 插件 (id) | 职责 | 配置 | 说明 |
-| --- | --- | --- | --- |
-| `logger` | 提供 `log` 服务（logging 工厂） | `level`（默认 INFO） | 其他插件 `ctx.get("log")("name")` |
-| `http` | 装配：gate 中间件、`routes` 注册表、`app` 服务 | `title` | 宿主注入 `fastapi_app` |
-| `tenant` | 每租户 `isolate` + 专属存储；`tenants` 服务（version=1.0） | `tenants: [acme, globex]` | realm 服务查找 |
-| `auth` | X-Tenant / X-API-Key → `request.state.tenant` | `keys: {tenant: key}`、`public_paths` | 失败 401；**契约接口可被 jwt_auth 替换** |
-| `quota` | 固定窗口限流（瀑布短路径 429） | `limit`（默认 5）、`window` 秒（默认 30） | 公开路径不限流 |
-| `tasks` | 任务 CRUD + 事件 + 指标 | `page_size`（默认 20） | 装配顺序无关（响应式） |
-| `audit` | 任务事件审计日志 | `event_prefix` | 监听器随 fiber 回收 |
-| `metrics` | 计数服务 + `/api/metrics` | `namespace`（默认 cordis） | 键如 `taskapi.tasks.created` |
-| `health` | 公开健康检查 | — | 返回状态与租户列表 |
+| 插件 (id) | 职责                                                       | 配置                                      | 说明                                     |
+| --------- | ---------------------------------------------------------- | ----------------------------------------- | ---------------------------------------- |
+| `logger`  | 提供 `log` 服务（logging 工厂）                            | `level`（默认 INFO）                      | 其他插件 `ctx.get("log")("name")`        |
+| `http`    | 装配：gate 中间件、`routes` 注册表、`app` 服务             | `title`                                   | 宿主注入 `fastapi_app`                   |
+| `tenant`  | 每租户 `isolate` + 专属存储；`tenants` 服务（version=1.0） | `tenants: [acme, globex]`                 | realm 服务查找                           |
+| `auth`    | X-Tenant / X-API-Key → `request.state.tenant`              | `keys: {tenant: key}`、`public_paths`     | 失败 401；**契约接口可被 jwt_auth 替换** |
+| `quota`   | 固定窗口限流（瀑布短路径 429）                             | `limit`（默认 5）、`window` 秒（默认 30） | 公开路径不限流                           |
+| `tasks`   | 任务 CRUD + 事件 + 指标                                    | `page_size`（默认 20）                    | 装配顺序无关（响应式）                   |
+| `audit`   | 任务事件审计日志                                           | `event_prefix`                            | 监听器随 fiber 回收                      |
+| `metrics` | 计数服务 + `/api/metrics`                                  | `namespace`（默认 cordis）                | 键如 `taskapi.tasks.created`             |
+| `health`  | 公开健康检查                                               | —                                         | 返回状态与租户列表                       |
 
 ### 4.6 运行与验证
 
@@ -290,13 +317,13 @@ def plugin(ctx: Context, config: dict) -> None:
 **第二步：注册使用（app.yml 替换 auth 行——其余 8 个插件不动）**
 
 ```yaml
-  - id: auth
-    url: plugins.jwt_auth:plugin            # 原 plugins.auth:plugin
-    config:
-      secret: dev-secret-change-me          # 生产用环境变量/密钥管理注入
-      issuer: task-api
-      audience: task-api
-      public_paths: [/api/health]           # 公开路径白名单
+- id: auth
+  url: plugins.jwt_auth:plugin # 原 plugins.auth:plugin
+  config:
+    secret: dev-secret-change-me # 生产用环境变量/密钥管理注入
+    issuer: task-api
+    audience: task-api
+    public_paths: [/api/health] # 公开路径白名单
 ```
 
 **第三步：验证**
@@ -320,17 +347,17 @@ pytest examples/task_api/tests/test_jwt_auth.py -q   # 成功/缺失/篡改/过�
 
 ## 8. 核心 API 速查
 
-| 想做什么 | 用什么 | 一句话说明 |
-| --- | --- | --- |
-| 能力可插拔、可拆除 | `ctx.provide()` / `ctx.effect()` / `Fiber.dispose()` | 可逆副作用是全部语义的底座 |
-| 声明式装配应用 | `Loader.include("app.yml")` → `reconcile / disable / enable` | 配置文件即架构图（JSON/YAML/TOML） |
-| 依赖升级护栏 | `Service.version` + `@require("svc", ">=1.0")` | 版本/接口契约，不满足=软等待 |
-| 中间件 / 拦截链 | `ctx.on(event, handler)` + `waterfall(..., fallback=...)` | 不调用 `next()` 即拦截（限流/鉴权） |
-| 多租户 | `ctx.isolate(name, realm)` + `internal/config` overlay | realm 服务隔离 + 租户配置派生 |
-| 不可信插件边界 | `Context.filtered()` / `create_scope` / `scope_target` | 事件协调式可见性隔离（非安全沙箱） |
-| 跨进程服务 | `Bridge.serve/connect` + `expose/proxy` | 远程服务代理 + 事件贯通 |
-| 开发期热替换 | `HMR(loader)` + `watch([...])` | 依赖图分类 + 事务式重载，失败回滚 |
-| 插件自动发现 | `discover()` / `load_entry_points()` | Python 包入口点（插件市场形态） |
+| 想做什么           | 用什么                                                       | 一句话说明                          |
+| ------------------ | ------------------------------------------------------------ | ----------------------------------- |
+| 能力可插拔、可拆除 | `ctx.provide()` / `ctx.effect()` / `Fiber.dispose()`         | 可逆副作用是全部语义的底座          |
+| 声明式装配应用     | `Loader.include("app.yml")` → `reconcile / disable / enable` | 配置文件即架构图（JSON/YAML/TOML）  |
+| 依赖升级护栏       | `Service.version` + `@require("svc", ">=1.0")`               | 版本/接口契约，不满足=软等待        |
+| 中间件 / 拦截链    | `ctx.on(event, handler)` + `waterfall(..., fallback=...)`    | 不调用 `next()` 即拦截（限流/鉴权） |
+| 多租户             | `ctx.isolate(name, realm)` + `internal/config` overlay       | realm 服务隔离 + 租户配置派生       |
+| 不可信插件边界     | `Context.filtered()` / `create_scope` / `scope_target`       | 事件协调式可见性隔离（非安全沙箱）  |
+| 跨进程服务         | `Bridge.serve/connect` + `expose/proxy`                      | 远程服务代理 + 事件贯通             |
+| 开发期热替换       | `HMR(loader)` + `watch([...])`                               | 依赖图分类 + 事务式重载，失败回滚   |
+| 插件自动发现       | `discover()` / `load_entry_points()`                         | Python 包入口点（插件市场形态）     |
 
 ## 9. 质量与边界
 
@@ -341,5 +368,5 @@ pytest examples/task_api/tests/test_jwt_auth.py -q   # 成功/缺失/篡改/过�
 
 ## 参考
 
-- 论文：*A Programming Paradigm for Spatiotemporal Composability*
+- 论文：_A Programming Paradigm for Spatiotemporal Composability_
 - Node.js 版：Cordis v4 / DeepSeek Harness vendor（本实现完全以其语义为基准，不参考其他 Python Cordis 实现）

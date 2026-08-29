@@ -1,0 +1,1514 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cordis_py × examples/task_api 全解 —— 从 0 到 1 读懂插件化多租户 API</title>
+<style>
+/* ============================================================
+   蓝图手册（Blueprint Manual）主题
+   ============================================================ */
+:root {
+  --deep:   #0c1f35;
+  --deep-2: #12283f;
+  --ink:    #1b2836;
+  --ink-2:  #44566b;
+  --paper:  #f7f4ed;
+  --paper-2:#efeade;
+  --accent: #e05e2b;
+  --blue:   #1f5f9e;
+  --teal:   #0f8f8a;
+  --red:    #b3372e;
+  --border: #ddd5c4;
+  --code-bg:#0f1c2c;
+  --code-ink:#d9e4ef;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --serif: "Songti SC", "Noto Serif SC", "STSong", "SimSun", Georgia, serif;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  line-height: 1.85;
+  font-size: 15.5px;
+}
+::selection { background: rgba(30,95,158,.22); }
+
+/* ---------- 顶部进度条 ---------- */
+#progress {
+  position: fixed; top: 0; left: 0; height: 3px; width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--blue));
+  z-index: 99; transition: width .08s linear;
+}
+
+/* ---------- Hero ---------- */
+header.hero {
+  position: relative; overflow: hidden;
+  background: var(--deep);
+  background-image:
+    radial-gradient(1200px 420px at 80% -60px, rgba(31,95,158,.35), transparent 60%),
+    radial-gradient(700px 300px at 10% 110%, rgba(224,94,43,.16), transparent 60%),
+    linear-gradient(rgba(31,95,158,.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31,95,158,.14) 1px, transparent 1px);
+  background-size: auto, auto, 44px 44px, 44px 44px;
+  color: #e8eef4;
+  padding: 64px 24px 48px;
+}
+header.hero .wrap { max-width: 1180px; margin: 0 auto; }
+.hero .eyebrow {
+  font-family: var(--mono); font-size: 12.5px; letter-spacing: .22em;
+  color: #7fb3e6; text-transform: uppercase; margin-bottom: 14px;
+}
+.hero h1 {
+  font-family: var(--serif); font-weight: 700;
+  font-size: clamp(30px, 5vw, 46px); line-height: 1.32; margin: 0 0 14px;
+  text-wrap: balance;
+}
+.hero h1 .hl { color: #ffb27a; }
+.hero .sub { max-width: 760px; font-size: 16px; color: #b9c8d8; margin: 0 0 22px; }
+.hero .badges { display: flex; flex-wrap: wrap; gap: 10px; }
+.badge {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .04em;
+  border: 1px solid rgba(127,179,230,.45); color: #cfe3f7;
+  padding: 5px 12px; border-radius: 999px; background: rgba(15,28,44,.5);
+}
+.badge b { color: #ffb27a; font-weight: 600; }
+.hero .grid-deco {
+  position: absolute; right: -120px; top: -120px; width: 380px; height: 380px;
+  border-radius: 50%; border: 2px dashed rgba(127,179,230,.25);
+  opacity: .8; pointer-events: none;
+}
+.hero .grid-deco::after {
+  content: ""; position: absolute; inset: 60px;
+  border-radius: 50%; border: 1px solid rgba(127,179,230,.18);
+}
+
+/* ---------- 布局 ---------- */
+.layout { max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; display: grid; grid-template-columns: 260px minmax(0,1fr); gap: 48px; }
+
+/* ---------- 目录 ---------- */
+nav.toc { position: sticky; top: 28px; align-self: start; max-height: calc(100vh - 56px); overflow: auto; }
+nav.toc .toc-head {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .2em;
+  color: var(--ink-2); text-transform: uppercase; padding-bottom: 10px;
+  border-bottom: 2px solid var(--ink); margin-bottom: 10px;
+}
+nav.toc ol { list-style: none; margin: 0; padding: 0; }
+nav.toc li { margin: 2px 0; }
+nav.toc a {
+  display: block; text-decoration: none; color: var(--ink-2);
+  font-size: 13.5px; padding: 6px 10px; border-left: 2px solid transparent;
+  transition: color .15s, border-color .15s, background .15s;
+}
+nav.toc a .no { font-family: var(--mono); font-size: 11.5px; color: var(--accent); margin-right: 8px; }
+nav.toc a:hover { color: var(--ink); background: rgba(30,95,158,.06); }
+nav.toc a.on { color: var(--blue); border-left-color: var(--accent); background: rgba(30,95,158,.08); font-weight: 600; }
+
+/* ---------- 章节 ---------- */
+main { min-width: 0; }
+section { margin: 0 0 74px; scroll-margin-top: 24px; }
+section > h2 {
+  display: flex; align-items: baseline; gap: 14px;
+  font-family: var(--serif); font-size: 27px; color: var(--ink);
+  letter-spacing: .01em; margin: 0 0 6px;
+}
+section > h2 .no {
+  font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--accent);
+  letter-spacing: .1em; white-space: nowrap;
+}
+section > .lead { color: var(--ink-2); margin: 0 0 22px; max-width: 74ch; }
+.rule { height: 1px; background: linear-gradient(90deg, var(--accent), var(--border) 40%); margin: 0 0 26px; position: relative; }
+.rule::before { content: ""; position: absolute; left: 0; top: -2.5px; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; }
+
+h3 { font-family: var(--serif); font-size: 19.5px; margin: 34px 0 12px; color: var(--deep); }
+h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--blue); }
+p { margin: 0 0 12px; }
+ul, ol { margin: 0 0 14px; padding-left: 22px; }
+li { margin: 4px 0; }
+b, strong { color: var(--ink); }
+a.inline { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- 表格 ---------- */
+.tbl-wrap { overflow-x: auto; margin: 16px 0 22px; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 2px 0 rgba(27,40,54,.05); }
+table { width: 100%; border-collapse: collapse; font-size: 13.8px; background: #fffdf8; }
+th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--deep); background: var(--paper-2); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: rgba(30,95,158,.04); }
+td code, th code { font-size: 12.5px; }
+code { font-family: var(--mono); font-size: .88em; background: rgba(31,95,158,.09); color: var(--deep); padding: 1.5px 5px; border-radius: 4px; white-space: nowrap; }
+td code { white-space: normal; }
+
+/* ---------- 代码面板 ---------- */
+.code-panel {
+  margin: 20px 0 26px; border-radius: 12px; overflow: hidden;
+  border: 1px solid #1c3350; background: var(--code-bg);
+  box-shadow: 0 10px 28px -14px rgba(12,31,53,.55);
+}
+.code-panel .bar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--deep-2); padding: 8px 14px; border-bottom: 1px solid #1c3350;
+}
+.code-panel .bar .dot { width: 9px; height: 9px; border-radius: 50%; background: #e05e2b; opacity: .85; }
+.code-panel .bar .dot:nth-child(2) { background: #0f8f8a; }
+.code-panel .bar .dot:nth-child(3) { background: #1f5f9e; }
+.code-panel .bar .fname {
+  font-family: var(--mono); font-size: 12.5px; color: #9fd0ef; margin-left: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.code-panel .bar .lang {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+  color: #6f8fae; border: 1px solid #2a4664; border-radius: 999px; padding: 2px 9px;
+}
+.code-panel .bar .copy {
+  margin-left: auto; font-family: var(--mono); font-size: 11px; color: #cfe3f7;
+  background: rgba(31,95,158,.35); border: 1px solid #2a4664; border-radius: 6px;
+  padding: 3px 10px; cursor: pointer;
+}
+.code-panel .bar .copy:hover { background: rgba(31,95,158,.6); }
+.code-panel pre { margin: 0; padding: 16px 0 16px 14px; overflow-x: auto; }
+.code-panel code {
+  display: block; counter-reset: line;
+  font-family: var(--mono); font-size: 12.8px; line-height: 1.72;
+  color: var(--code-ink); background: none; padding: 0; white-space: pre; tab-size: 4;
+}
+.code-panel code .l { display: block; counter-increment: line; padding: 0 18px 0 52px; position: relative; }
+.code-panel code .l::before {
+  content: counter(line);
+  position: absolute; left: 16px; width: 28px; text-align: right;
+  color: #4d6c8f; font-size: 11.5px; user-select: none;
+}
+.code-panel code .l:hover { background: rgba(127,179,230,.06); }
+.code-panel .tok-c { color: #6d8aa7; font-style: italic; }      /* 注释 */
+.code-panel .tok-k { color: #ffb27a; }                          /* 关键字/醒目 */
+.code-panel .tok-s { color: #9fd0ef; }                          /* 字符串 */
+.code-panel .tok-t { color: #7fd6c8; }                          /* 类型/函数 */
+
+/* ---------- 呼出框 ---------- */
+.callout { margin: 18px 0; padding: 15px 18px 15px 16px; border-radius: 10px; background: #fffdf8; border-left: 4px solid; box-shadow: 0 4px 14px -10px rgba(27,40,54,.3); }
+.callout .t { font-size: 13px; font-weight: 700; margin-bottom: 4px; font-family: var(--mono); letter-spacing: .06em; }
+.callout p:last-child { margin-bottom: 0; }
+.callout.why    { border-color: var(--blue);  }
+.callout.why .t { color: var(--blue); }
+.callout.try    { border-color: var(--accent); }
+.callout.try .t { color: var(--accent); }
+.callout.warn   { border-color: var(--red); background: #fdf6f4; }
+.callout.warn .t { color: var(--red); }
+
+/* ---------- 特点卡 ---------- */
+.feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 18px 0 24px; }
+.feature {
+  background: #fffdf8; border: 1px solid var(--border); border-radius: 12px; padding: 18px 18px 14px;
+  transition: transform .18s, box-shadow .18s;
+}
+.feature:hover { transform: translateY(-3px); box-shadow: 0 12px 24px -14px rgba(27,40,54,.35); }
+.feature .fi { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.feature .fi .fn {
+  font-family: var(--mono); font-size: 11px; color: #fff; background: var(--blue);
+  border-radius: 6px; padding: 2px 8px; letter-spacing: .04em; white-space: nowrap;
+}
+.feature .fi h4 { margin: 0; color: var(--deep); font-size: 15px; }
+.feature p { font-size: 13.6px; color: var(--ink-2); margin: 0; }
+
+/* ---------- 目录树 / 纯文本块 ---------- */
+.tree {
+  font-family: var(--mono); font-size: 13px; line-height: 1.9;
+  background: #fffdf8; border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 22px; overflow-x: auto; color: var(--ink);
+}
+.tree .c { color: #7d8b99; }
+.tree .h { color: var(--blue); font-weight: 700; }
+
+/* ---------- 流程图 ---------- */
+.flow { display: grid; gap: 0; margin: 20px 0 26px; }
+.flow .step {
+  display: grid; grid-template-columns: 46px minmax(0,1fr); gap: 14px; position: relative;
+}
+.flow .step::before {
+  content: ""; position: absolute; left: 22px; top: 42px; bottom: -8px; width: 2px;
+  background: linear-gradient(var(--blue), var(--border));
+}
+.flow .step:last-child::before { display: none; }
+.flow .step .n {
+  font-family: var(--mono); font-size: 13px; font-weight: 700; color: #fff;
+  background: var(--blue); width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; margin-top: 4px; z-index: 1;
+}
+.flow .step.t1 .n { background: var(--accent); }
+.flow .step.t2 .n { background: var(--teal); }
+.flow .step .card {
+  background: #fffdf8; border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px;
+}
+.flow .step .card .h {
+  font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--deep); margin-bottom: 4px;
+}
+.flow .step .card p { margin: 0; font-size: 13.8px; color: var(--ink-2); }
+
+/* ---------- 术语小块 ---------- */
+.kv { display: grid; grid-template-columns: 120px 1fr; gap: 4px 14px; font-size: 14px; margin: 12px 0 16px; }
+.kv dt { font-family: var(--mono); font-size: 12.5px; color: var(--accent); padding-top: 2px; }
+.kv dd { margin: 0; color: var(--ink-2); }
+
+/* ---------- FAQ ---------- */
+details.faq { border: 1px solid var(--border); border-radius: 10px; background: #fffdf8; margin: 10px 0; overflow: hidden; }
+details.faq summary {
+  cursor: pointer; padding: 13px 18px; font-weight: 600; color: var(--deep);
+  display: flex; gap: 12px; align-items: baseline; list-style: none;
+}
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary::before { content: "+"; font-family: var(--mono); color: var(--accent); font-weight: 700; }
+details.faq[open] summary::before { content: "–"; }
+details.faq[open] summary { border-bottom: 1px solid var(--border); }
+details.faq .a { padding: 12px 18px 15px; color: var(--ink-2); font-size: 14.2px; }
+
+/* ---------- 页码脚 ---------- */
+.colophon {
+  border-top: 2px solid var(--ink); padding-top: 18px; margin-top: 10px;
+  display: flex; flex-wrap: wrap; gap: 8px 22px; justify-content: space-between;
+  color: var(--ink-2); font-size: 13px; font-family: var(--mono);
+}
+.colophon a { color: var(--blue); text-decoration: none; }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 1023px) {
+  .layout { grid-template-columns: 1fr; gap: 10px; }
+  nav.toc { position: static; max-height: none; }
+  nav.toc ol { display: none; }
+  nav.toc.open ol { display: block; }
+  nav.toc .toc-head { cursor: pointer; }
+  nav.toc .toc-head::after { content: " ▾"; font-family: var(--mono); }
+}
+@media print {
+  #progress, nav.toc, .code-panel .bar .copy { display: none; }
+  body { background: #fff; }
+  section { page-break-inside: avoid; }
+  .layout { grid-template-columns: 1fr; padding: 0; }
+  .code-panel { box-shadow: none; }
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">cordis_py field manual · examples/task_api</div>
+    <h1>从 0 到 1 读懂 <span class="hl">插件化多租户任务 API</span><br>—— examples/task_api 全流程剖析</h1>
+    <p class="sub">
+      这不是一个“炫技”示例，而是一份可以照着抄的工程模板：把 FastAPI 应用拆成
+      9 个互不感知的插件，用一份 <code>app.yml</code> 声明装配，让“加功能、换实现、
+      热更新”都变成改一行配置或加一个文件。本文从 <b>为什么这么写</b> 讲到
+      <b>每一行代码在做什么</b>。
+    </p>
+    <div class="badges">
+      <span class="badge">v<b>0.9.1</b></span>
+      <span class="badge"><b>9</b> 插件 + <b>1</b> 替代件</span>
+      <span class="badge"><b>11</b> 个测试</span>
+      <span class="badge">FastAPI + uvicorn</span>
+      <span class="badge">HMR 热替换内置</span>
+    </div>
+  </div>
+  <div class="grid-deco"></div>
+</header>
+
+<div class="layout">
+<nav class="toc" id="toc">
+  <div class="toc-head">目录 / Contents</div>
+  <ol>
+    <li><a href="#s0"><span class="no">00</span>这份文档怎么读</a></li>
+    <li><a href="#s1"><span class="no">01</span>cordis_py 是什么（特点）</a></li>
+    <li><a href="#s2"><span class="no">02</span>全景：这个 example 长什么样</a></li>
+    <li><a href="#s3"><span class="no">03</span>启动：main.py 逐段拆解</a></li>
+    <li><a href="#s4"><span class="no">04</span>装配：app.yml 逐插件讲解</a></li>
+    <li><a href="#s5"><span class="no">05</span>插件逐个拆解（10 个文件）</a></li>
+    <li><a href="#s6"><span class="no">06</span>一次请求的完整旅程</a></li>
+    <li><a href="#s7"><span class="no">07</span>六个核心机制深挖</a></li>
+    <li><a href="#s8"><span class="no">08</span>动手实验：跑起来 + 改造</a></li>
+    <li><a href="#s9"><span class="no">09</span>测试全解：每个测试在验什么</a></li>
+    <li><a href="#s10"><span class="no">10</span>FAQ：常见的 10 个疑问</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ============================================================
+     00 导读
+============================================================ -->
+<section id="s0">
+  <h2><span class="no">§00</span>这份文档怎么读</h2>
+  <div class="rule"></div>
+  <p class="lead">如果你只看一篇说明，请从 §02 跳到 §06 再回来。其余章节按需取用。</p>
+
+  <table class="tbl-wrap">
+    <thead>
+      <tr><th>你的状态</th><th>建议路径</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>从没接触过 cordis_py</td><td>§01（特点）→ §02（全景）→ §03–05（逐文件）→ §06（请求旅程）</td></tr>
+      <tr><td>懂插件概念，但看不懂这个目录</td><td>§02 → §04（配置文件就是架构图）→ §05（每个插件）</td></tr>
+      <tr><td>想改这个 example（换认证、加插件）</td><td>§07 机制 5（契约替换）→ §08（动手实验）→ §09（测试）</td></tr>
+      <tr><td>只想先跑起来</td><td>§08 第一小节</td></tr>
+    </tbody>
+  </table>
+
+  <h3>先记住三个词，后面全部围绕它们展开</h3>
+  <div class="kv">
+    <dt>插件（plugin）</dt><dd>一段函数 <code>def plugin(ctx, config): ...</code>，只做一件事。它通过 <code>ctx</code> 提供/消费“服务”。</dd>
+    <dt>服务（service）</dt><dd>挂在 <code>ctx</code> 上的命名对象（如 <code>routes</code>、<code>auth</code>、<code>tenants</code>）。插件之间<b>只通过服务名交互，不互相 import</b>。</dd>
+    <dt>装配（composition）</dt><dd>把插件列表（url + config）交给 <code>Loader</code>，由它按顺序装载。装配顺序<b>不重要</b>——这是本 example 刻意演示的核心。</dd>
+  </div>
+
+  <div class="callout why">
+    <div class="t">为什么拆成这样，而不是写成一个 500 行的 app.py？</div>
+    <p>500 行的 app.py 里，改一个功能要通读全局；插件化的 app.py 里，改限流 = 改
+    <code>quota.py</code>，换认证 = 改一行配置，删日志 = 删一行配置。每个关注点一个文件、
+    一份配置、一组测试——这就是“可组合性”落到日常工程的样子。</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     01 cordis_py 特点
+============================================================ -->
+<section id="s1">
+  <h2><span class="no">§01</span>cordis_py 是什么：项目的 10 个特点</h2>
+  <div class="rule"></div>
+  <p class="lead">
+    cordis_py 是 <b>Cordis</b>（论文《A Programming Paradigm for Spatiotemporal Composability》/
+    Node.js 版 Cordis v4）的 Python 实现：面向动态系统的<b>时空可组合性</b>元框架。
+    它不帮你写业务，它帮你<b>组织业务</b>——让“装上去的东西一定能拆下来，且拆得干净”。
+    它面向三个痛点：功能装上容易拆下难、初始化顺序写死、扩展要改核心。
+  </p>
+
+  <div class="feature-grid">
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 01</span><h4>一切可逆（可组合性的“时”轴）</h4></div>
+      <p>插件注册的所有东西（服务、事件监听器、路由、后台任务）都是一条“效果”记录，卸载时按 LIFO 逐一回收。拆插件 = 零残留，不存在“旧路由还在”的僵尸状态。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 02</span><h4>依赖响应式（可组合性的“空”轴）</h4></div>
+      <p>插件声明 <code>@inject([...])</code> 后，依赖没就绪就保持 PENDING（软等待），提供者一出现就自动激活。装配顺序无关，加/删/换插件都不用调整其他代码。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 03</span><h4>声明式装配</h4></div>
+      <p><code>Loader</code> 读 JSON / YAML / TOML 配置文件，一份文件 = 整张架构图。增删能力 = 增删一行配置。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 04</span><h4>服务即契约</h4></div>
+      <p><code>provide(name, value, version=...)</code> + <code>@require("svc", "&gt;=1.0")</code>。依赖升级有护栏：约束不满足不报错、只软等待。插件间只认接口不认类，实现了也能换。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 05</span><h4>事件系统（5 种派发模式）</h4></div>
+      <p><code>emit</code>（同步广播）、<code>parallel</code>、<code>serial</code>、<code>bail</code>、<code>waterfall</code>（中间件链：不调 <code>next</code> 即拦截）。还支持 <code>receiver=</code> 过滤与 <code>global_</code> 旁路。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 06</span><h4>空间隔离原语</h4></div>
+      <p><code>isolate(name, realm)</code> 做服务 realm 隔离（多租户物理隔离，而非 if 判断）；<code>filtered(pred)</code> + <code>create_scope</code> 做事件可见性隔离（不可信插件边界）。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 07</span><h4>显式生命周期状态机</h4></div>
+      <p>每个插件实例是一个 Fiber：<code>PENDING → LOADING → ACTIVE → UNLOADING → DISPOSED</code>（失败进 <code>FAILED</code>）。状态可查询（<code>fiber.unsatisfied</code> 告诉你它在等谁）。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 08</span><h4>同步 / 异步双模式</h4></div>
+      <p>有事件循环时走 asyncio，没有时自动内联同步驱动；同步链路遇到必须异步的操作抛 <code>AsyncRequiredError</code> 给出明确边界，绝不静默丢弃。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 09</span><h4>HMR 开发期热替换</h4></div>
+      <p>改插件源码不重启进程：模块依赖图分类（accepted / declined）+ 事务式重载 + 失败回滚。本 example 默认开启，保存即生效。</p>
+    </div>
+    <div class="feature">
+      <div class="fi"><span class="fn">feature 10</span><h4>跨进程 Bridge + 零依赖核心</h4></div>
+      <p><code>Bridge</code> 支持跨进程服务代理与事件贯通（JSON-lines 协议）；核心仅依赖 <code>packaging</code>，PyYAML / watchdog / pydantic 均为可选 extras。</p>
+    </div>
+  </div>
+
+  <div class="callout try">
+    <div class="t">在 example 里找到每个特点</div>
+    <p>特点 01 → <code>tasks.py:79 ctx.effect(lambda: undo_all)</code>；特点 02 → <code>tasks.py</code> 排在 <code>http</code> 前面；特点 04 → <code>tenant.py:63 provide(..., version="1.0")</code> 与 <code>tasks.py:20 @require("tenants", "&gt;=1.0")</code>；特点 05 → <code>http_service.py:92 ctx.waterfall("http/request", ...)</code>；特点 06 → <code>tenant.py:48 ctx.isolate("tasks", name)</code>；特点 09 → <code>main.py:30 HMR(loader)</code>。后面每一节都会回到这里。</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     02 全景
+============================================================ -->
+<section id="s2">
+  <h2><span class="no">§02</span>全景：这个 example 长什么样</h2>
+  <div class="rule"></div>
+  <p class="lead">先建立整张地图，再钻进细节。这棵树上的每一个文件，后面都有专门小节。</p>
+
+  <div class="tree">
+<span class="h">examples/task_api/</span>
+├── <b>main.py</b>              宿主：约 40 行。创建 FastAPI、注入应用对象、加载装配、可选 HMR
+├── <b>app.yml</b>              声明式装配：13 个插件（id / url / config）—— 配置即架构图
+├── requirements.txt         fastapi / uvicorn / httpx / watchdog
+├── conftest.py              空文件，但有用：让 pytest 把本目录加入搜索路径
+├── <span class="h">plugins/</span>
+│   ├── logger_plugin.py    <span class="c">log 服务：标准库 logging 工厂（其他插件拿到“按名称取 logger”的函数）</span>
+│   ├── http_service.py     <span class="c">HTTP 装配：gate 中间件入口 + 请求瀑布链 + 路由注册表 routes</span>
+│   ├── sqlite_store.py   <span class="c">sqlite 服务：任务持久化（重启不丢，未装配回退内存）</span>
+│   ├── tenant.py           <span class="c">租户注册表：每租户一个 isolate realm + 专属存储（动态选 sqlite/内存）</span>
+│   ├── auth.py             <span class="c">认证：X-Tenant / X-API-Key → request.state.tenant（契约 authenticate）</span>
+│   ├── jwt_auth.py         <span class="c">← JWT 认证：与 auth 同契约，可一键替换（见 §05-10）</span>
+│   ├── quota.py            <span class="c">限流：固定窗口，挂在 http/request 瀑布链上，超标短路 429</span>
+│   ├── audit.py            <span class="c">审计：监听 task/created、task/deleted 事件写日志</span>
+│   ├── metrics.py          <span class="c">指标：计数服务 + 暴露 /api/metrics 路由</span>
+│   ├── tags.py            <span class="c">标签：提供带版本 tags 服务 + POST/GET /api/tasks/{id}/tags</span>
+│   ├── tag_stats.py       <span class="c">标签统计：tags 服务第一位消费者（@require 版本契约）</span>
+│   ├── failure_monitor.py <span class="c">失败监控：4xx/5xx/异常 → err.log（瀑布链监听）</span>
+│   ├── tasks.py          <span class="c">业务：任务 CRUD（响应式注入 + emit 事件 + 埋点）</span>
+│   └── health.py           <span class="c">健康检查：公开路由，返回状态与租户列表</span>
+└── <span class="h">tests/</span>
+    ├── test_app.py            6 个集成测试：TestClient 全链路（含 SQLite 持久化/失败监控/版本契约）
+    └── test_jwt_auth.py     5 个单元测试：JWT 契约
+  </div>
+
+  <h3>2.1 端点一览（一共 6 个）</h3>
+  <table class="tbl-wrap">
+    <thead><tr><th>方法</th><th>路径</th><th>认证</th><th>做什么</th><th>成功 / 失败返回</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/api/health</code></td><td>公开</td><td>健康检查 + 租户列表</td><td>200 <code>{"status":"ok","tenants":["acme","globex"]}</code></td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/tasks</code></td><td>必须</td><td>按租户列出任务（前 page_size 条）</td><td>200 <code>{"items":[...],"count":N}</code> / 401</td></tr>
+      <tr><td><code>POST</code></td><td><code>/api/tasks</code></td><td>必须</td><td>创建任务（title 必填，priority 默认 1）</td><td>201 任务对象 / 422 <code>title_required</code> / 401</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/tasks/{id}</code></td><td>必须</td><td>按租户查一条</td><td>200 任务对象 / 404 <code>not_found</code> / 401</td></tr>
+      <tr><td><code>DELETE</code></td><td><code>/api/tasks/{id}</code></td><td>必须</td><td>按租户删除</td><td>200 <code>{"deleted":id}</code> / 404 / 401</td></tr>
+      <tr><td><code>GET</code></td><td><code>/api/metrics</code></td><td>必须</td><td>查看全部计数（如 <code>taskapi.tasks.created</code>）</td><td>200 计数器字典 / 401</td></tr>
+    </tbody>
+  </table>
+  <p>认证头：<code>X-Tenant: acme</code> + <code>X-API-Key: key-acme</code>（见 <code>app.yml</code> 的 <code>auth.keys</code>）。</p>
+
+  <h3>2.2 谁消费谁：插件依赖关系图</h3>
+  <div class="flow">
+    <div class="step t1"><div class="n">L</div><div class="card">
+      <div class="h">logger （无依赖）</div>
+      <p>提供 <code>log</code>：一个工厂函数 <code>logger(name) → logging.Logger</code>。大多数插件用 <code>ctx.get("log")</code> 可选地拿它。</p>
+    </div></div>
+    <div class="step t1"><div class="n">H</div><div class="card">
+      <div class="h">http_service （依赖 fastapi_app + log）</div>
+      <p>提供 <code>routes</code>（路由注册表）与 <code>app</code>；在 <code>app.state.cordis_gate</code> 上挂请求 gate。</p>
+    </div></div>
+    <div class="step t1"><div class="n">T</div><div class="card">
+      <div class="h">tenant （无依赖，但被 require 版本约束）</div>
+      <p>提供 <code>tenants</code>（version=<code>1.0</code>）：租户注册表 + 每租户隔离作用域。</p>
+    </div></div>
+    <div class="step"><div class="n">→</div><div class="card">
+      <div class="h">消费方：tasks、health、metrics、quota、audit、auth</div>
+      <p><b>tasks</b> 依赖 <code>routes</code>+<code>tenants</code>（respond 等待）；<b>health</b>、<b>metrics</b> 依赖 <code>routes</code>；<b>quota</b>、<b>audit</b> 只挂事件不依赖服务（或可选依赖）；<b>auth</b> 什么都不依赖，只提供 <code>auth</code>。</p>
+    </div></div>
+  </div>
+
+  <div class="callout warn">
+    <div class="t">注意目录里没有的“三层”：没有 service/ 层、没有 router/ 层、没有 middleware/ 层</div>
+    <p>这是故意的：<b>layers（层）是结构，plugins（插件）是能力</b>。层会在代码里形成“必须按顺序放”的硬约束，插件则让每个能力自带依赖声明。所以目录就两个：宿主文件 + plugins/。</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     03 main.py
+============================================================ -->
+<section id="s3">
+  <h2><span class="no">§03</span>启动：main.py 逐段拆解</h2>
+  <div class="rule"></div>
+  <p class="lead">宿主只负责三件事：<b>创建应用对象 → 注入 → 加载装配</b>。它不知道任何插件的存在，插件也不知道它的存在——唯一的接缝是 <code>root.provide("fastapi_app", app)</code> 这一个服务名。</p>
+
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">examples/task_api/main.py</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-c">"""多租户任务 API 案例：FastAPI + cordis_py 插件化装配入口。"""</span></span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">from</span> __future__ <span class="tok-k">import</span> annotations</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">import</span> argparse</span>
+<span class="l"><span class="tok-k">import</span> sys</span>
+<span class="l"><span class="tok-k">from</span> contextlib <span class="tok-k">import</span> asynccontextmanager</span>
+<span class="l"><span class="tok-k">from</span> pathlib <span class="tok-k">import</span> Path</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">from</span> fastapi <span class="tok-k">import</span> FastAPI</span>
+<span class="l"></span>
+<span class="l">BASE = Path(__file__).resolve().parent</span>
+<span class="l"></span>
+<span class="l">sys.path.append(str(BASE / <span class="tok-s">"src"</span>))</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">from</span> cordis_py <span class="tok-k">import</span> HMR, Context, Loader</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">@asynccontextmanager</span></span>
+<span class="l"><span class="tok-k">async def</span> lifespan(app: FastAPI):</span>
+<span class="l">    <span class="tok-c">"""启动：宿主注入应用对象 → Loader 声明式装配 → 可选 HMR 监听。"""</span></span>
+<span class="l">    root = Context()</span>
+<span class="l">    <span class="tok-c"># 运行时对象（FastAPI 应用）由宿主注入，不进配置文件。</span></span>
+<span class="l">    root.provide(<span class="tok-s">"fastapi_app"</span>, app)</span>
+<span class="l">    loader = Loader(root)</span>
+<span class="l">    <span class="tok-k">await</span> loader.include(BASE / <span class="tok-s">"app.yml"</span>)</span>
+<span class="l">    app.state.cordis = root</span>
+<span class="l"></span>
+<span class="l">    hmr: HMR | <span class="tok-t">None</span> = <span class="tok-t">None</span></span>
+<span class="l">    <span class="tok-k">if</span> getattr(app.state, <span class="tok-s">"watch"</span>, False):</span>
+<span class="l">        hmr = HMR(loader)</span>
+<span class="l">        app.state.hmr_watcher = hmr.watch([str(BASE / <span class="tok-s">"plugins"</span>)])</span>
+<span class="l"></span>
+<span class="l">    yield</span>
+<span class="l">    <span class="tok-c"># 退出：可逆效果按 LIFO 全部回收（服务、路由、监听器、模块追踪器）。</span></span>
+<span class="l">    <span class="tok-k">if</span> hmr <span class="tok-k">is not</span> <span class="tok-t">None</span>:</span>
+<span class="l">        <span class="tok-k">await</span> app.state.hmr_watcher.stop()</span>
+<span class="l">        hmr.dispose()</span>
+<span class="l">    <span class="tok-k">await</span> loader.dispose()</span>
+<span class="l">    <span class="tok-k">await</span> root.fiber.dispose()</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">def</span> make_app(watch: bool = False) -&gt; FastAPI:</span>
+<span class="l">    <span class="tok-c">"""创建应用；*watch* 为 True 时启用插件源码热替换。"""</span></span>
+<span class="l">    app = FastAPI(title=<span class="tok-s">"Cordis Task API"</span>, version=<span class="tok-s">"0.1.0"</span>, lifespan=lifespan)</span>
+<span class="l">    <span class="tok-c"># 静态安装中间件入口（不随插件装载变动），链路逻辑由 http 插件注册。</span></span>
+<span class="l">    <span class="tok-k">from</span> plugins.http_service <span class="tok-k">import</span> CordisGateMiddleware</span>
+<span class="l"></span>
+<span class="l">    app.add_middleware(CordisGateMiddleware)</span>
+<span class="l">    app.state.watch = watch</span>
+<span class="l">    <span class="tok-k">return</span> app</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">def</span> main() -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    parser = argparse.ArgumentParser(description=<span class="tok-s">"Cordis 插件化任务 API 案例"</span>)</span>
+<span class="l">    parser.add_argument(</span>
+<span class="l">        <span class="tok-s">"--watch"</span>, action=<span class="tok-s">"store_true"</span>, default=True, help=<span class="tok-s">"启用 HMR 插件源码热替换"</span></span>
+<span class="l">    )</span>
+<span class="l">    parser.add_argument(<span class="tok-s">"--port"</span>, <span class="tok-t">type</span>=<span class="tok-t">int</span>, default=8000)</span>
+<span class="l">    args = parser.parse_args()</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">import</span> uvicorn</span>
+<span class="l"></span>
+<span class="l">    uvicorn.run(make_app(watch=args.watch), host=<span class="tok-s">"127.0.0.1"</span>, port=args.port)</span>
+<span class="l"></span>
+<span class="l">app = make_app()</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">if</span> __name__ == <span class="tok-s">"__main__"</span>:</span>
+<span class="l">    main()</span></code></pre>
+  </div>
+
+  <h3>3.1 逐段注释</h3>
+  <div class="flow">
+    <div class="step t1"><div class="n">1</div><div class="card">
+      <div class="h">L12–14：BASE 与模块路径</div>
+      <p><code>BASE = Path(__file__).resolve().parent</code> = 本文件所在目录（<code>examples/task_api/</code>）。第 14 行把 <code>BASE/"src"</code> 加入模块搜索路径——注意本仓库结构中<b>该目录并不存在</b>，所以这一行实际不生效（把一个不存在的目录 append 进 <code>sys.path</code> 是安全的空操作）；<code>from cordis_py import ...</code> 能成功，依赖的是<b>已安装</b>的 cordis_py（仓库根 <code>pip install -e .</code> 的可编辑安装）。保留这行的意义：把示例目录拷到别处单独运行时，如果旁边放一份 <code>src/</code> 源码即可免安装直跑。</p>
+    </div></div>
+    <div class="step t1"><div class="n">2</div><div class="card">
+      <div class="h">L19–27：lifespan（FastAPI 生命周期钩子）</div>
+      <p><code>root = Context()</code> 创建根容器；<code>root.provide("fastapi_app", app)</code> 把<b>运行时对象</b>注入容器——注意：它不进配置文件，因为 YAML 里放不了 Python 对象，这就是“宿主注入”的接缝。然后 <code>Loader(root)</code> 读 <code>app.yml</code> 并 <code>await loader.include(...)</code> 完成全部装配。</p>
+    </div></div>
+    <div class="step t1"><div class="n">3</div><div class="card">
+      <div class="h">L29–32：可选 HMR</div>
+      <p><code>app.state.watch</code> 由 <code>make_app(watch=)</code> 决定（<code>main()</code> 里默认 True，测试里 <code>make_app()</code> 默认 False）。开启后用 <code>HMR(loader)</code> 追踪模块依赖图，并 watch <code>plugins/</code> 目录。</p>
+    </div></div>
+    <div class="step t1"><div class="n">4</div><div class="card">
+      <div class="h">L34–40：yield 之后的清理（逆序回收）</div>
+      <p>先停 watcher、卸 HMR 追踪器，再 <code>loader.dispose()</code>（反向卸载全部插件 fiber，每个 fiber 的 effects 按 LIFO 清理），最后 <code>root.fiber.dispose()</code> 清根容器。顺序：<b>先停“会触发变化的东西”，再拆插件，最后清容器</b>。</p>
+    </div></div>
+    <div class="step t1"><div class="n">5</div><div class="card">
+      <div class="h">L43–51：make_app —— 为什么中间件是“静态”装的？</div>
+      <p>FastAPI/Starlette 的中间件栈在应用启动时构建，运行中 <code>add_middleware</code> 会报 <code>Cannot add middleware after application started</code>（TestClient 触发生命周期时尤其明显，本项目的血泪教训）。所以入口中间件 <code>CordisGateMiddleware</code> 由宿主静态安装，而<b>链路逻辑</b>（认证 → 瀑布 → 真实处理）由 http 插件在 lifespan 内注册到 <code>app.state.cordis_gate</code>——中间件是固定的“电线”，插件是“电器”。</p>
+    </div></div>
+    <div class="step"><div class="n">6</div><div class="card">
+      <div class="h">L54–70：入口 + 模块级 app</div>
+      <p><code>main()</code> 解析 <code>--port</code> 后交 uvicorn；模块级 <code>app = make_app()</code> 允许 <code>uvicorn main:app</code> 或有 WSGI 网关的场景直接加载（此时 watch=False，不启动 HMR）。</p>
+    </div></div>
+  </div>
+
+  <div class="callout why">
+    <div class="t">为什么是“注入”而不是“导入”？</div>
+    <p>如果 http 插件直接 <code>from main import app</code>，就形成了 <b>插件 → 宿主</b> 的硬依赖：example 的入口换成一个纯 CLI 工具、一个爬虫、或一份测试，这个插件都得改。反过来，插件只声明 <code>@inject(["fastapi_app"])</code>，谁来提供都行——<b>宿主输送到容器，插件从容器取</b>，方向单向，谁都不认识谁。</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     04 app.yml
+============================================================ -->
+<section id="s4">
+  <h2><span class="no">§04</span>装配：app.yml 逐插件讲解</h2>
+  <div class="rule"></div>
+  <p class="lead">这份文件就是整张架构图——<b>9 行插件声明，运行中的系统就长这样</b>。注意装配顺序是刻意“错”的：<code>tasks</code> 依赖 <code>routes</code>（http）和 <code>tenants</code>（tenant），却排在两者之前。因为依赖是响应式的，顺序无关；这个顺序本身就是在演示这一点。</p>
+
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">examples/task_api/app.yml</span><span class="lang">yaml</span><button class="copy">copy</button></div>
+    <pre><code><span class="l">plugins:</span>
+<span class="l">  <span class="tok-c"># 装配顺序刻意非依赖序：tasks 依赖 routes / registry，</span></span>
+<span class="l">  <span class="tok-c"># 提供者稍后才加载 —— 依赖响应机制保证它自动激活。</span></span>
+<span class="l">  - id: logger</span>
+<span class="l">    url: plugins.logger_plugin:plugin</span>
+<span class="l">    config:</span>
+<span class="l">      level: INFO</span>
+<span class="l"></span>
+<span class="l">  - id: tasks</span>
+<span class="l">    url: plugins.tasks:plugin</span>
+<span class="l">    config:</span>
+<span class="l">      page_size: 20</span>
+<span class="l"></span>
+<span class="l">  - id: tenant</span>
+<span class="l">    url: plugins.tenant:plugin</span>
+<span class="l">    config:</span>
+<span class="l">      tenants: [acme, globex]</span>
+<span class="l"></span>
+<span class="l">  - id: http</span>
+<span class="l">    url: plugins.http_service:plugin</span>
+<span class="l">    config:</span>
+<span class="l">      title: Cordis Task API</span>
+<span class="l"></span>
+<span class="l">  - id: auth</span>
+<span class="l">    url: plugins.auth:plugin</span>
+<span class="l">    config:</span>
+<span class="l">      keys:</span>
+<span class="l">        acme: key-acme</span>
+<span class="l">        globex: key-globex</span>
+<span class="l">      public_paths: [/api/health]</span>
+<span class="l"></span>
+<span class="l">  - id: quota</span>
+<span class="l">    url: plugins.quota:plugin</span>
+<span class="l">    config:</span>
+<span class="l">      limit: 5</span>
+<span class="l">      window: 30</span>
+<span class="l"></span>
+<span class="l">  - id: audit</span>
+<span class="l">    url: plugins.audit:plugin</span>
+<span class="l">    config:</span>
+<span class="l">      event_prefix: ""</span>
+<span class="l"></span>
+<span class="l">  - id: metrics</span>
+<span class="l">    url: plugins.metrics:plugin</span>
+<span class="l">    config:</span>
+<span class="l">      namespace: taskapi</span>
+<span class="l"></span>
+<span class="l">  - id: health</span>
+<span class="l">    url: plugins.health:plugin</span></code></pre>
+  </div>
+
+  <h3>4.1 每一行的含义</h3>
+  <table class="tbl-wrap">
+    <thead><tr><th>字段</th><th>含义</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>装配条目的唯一标识</td><td>用于 Loader 的增量协调（<code>reconcile</code>）、HMR 命中、<code>fiber</code> 记录。改名 = 旧条目先卸载再装载。</td></tr>
+      <tr><td><code>url</code></td><td>插件导入路径</td><td>格式 <code>module:attr</code>（或 <code>module.attr</code>）。<code>plugins.tasks:plugin</code> = 导入 <code>plugins.tasks</code> 模块取 <code>plugin</code> 对象。</td></tr>
+      <tr><td><code>config</code></td><td>该插件的配置字典</td><td>原样传给 <code>plugin(ctx, config)</code>。改限流阈值、租户名单、密钥都在这里——<b>改配置不动代码</b>。</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.2 九个插件：一句话职责 + 配置项</h3>
+  <table class="tbl-wrap">
+    <thead><tr><th>id</th><th>文件</th><th>职责一句话</th><th>config 项（默认值）</th></tr></thead>
+    <tbody>
+      <tr><td><code>logger</code></td><td>logger_plugin.py</td><td>提供 <code>log</code> 工厂：<code>get_logger("name")</code></td><td><code>level</code>（INFO）——日志级别</td></tr>
+      <tr><td><code>tasks</code></td><td>tasks.py</td><td>任务 CRUD + 发事件 + 埋点（业务）</td><td><code>page_size</code>（20）——列表页条数</td></tr>
+      <tr><td><code>tenant</code></td><td>tenant.py</td><td>每租户一个隔离作用域 + 专属存储；<code>tenants</code> 服务 v1.0</td><td><code>tenants</code>（必填）——租户名单</td></tr>
+      <tr><td><code>http</code></td><td>http_service.py</td><td>装配请求 gate、提供 <code>routes</code> 注册表与 <code>app</code> 服务</td><td><code>title</code>（无）——仅用于启动日志</td></tr>
+      <tr><td><code>auth</code></td><td>auth.py</td><td>API Key 认证：成功写 <code>request.state.tenant</code></td><td><code>keys</code>（必填）、<code>public_paths</code>（[]）</td></tr>
+      <tr><td><code>quota</code></td><td>quota.py</td><td>固定窗口限流，挂 <code>http/request</code> 瀑布链，超标 429</td><td><code>limit</code>（5）、<code>window</code>（30 秒）</td></tr>
+      <tr><td><code>audit</code></td><td>audit.py</td><td>监听业务事件写审计日志</td><td><code>event_prefix</code>（""）——日志前缀</td></tr>
+      <tr><td><code>metrics</code></td><td>metrics.py</td><td>计数服务 + <code>/api/metrics</code> 路由</td><td><code>namespace</code>（cordis）——计数键前缀</td></tr>
+      <tr><td><code>health</code></td><td>health.py</td><td>公开健康检查</td><td>无</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout try">
+    <div class="t">试一下“删 = 加”</div>
+    <p>把 <code>- id: quota</code> 整段（含 config）从 app.yml 删掉再重启：限流消失，<b>其余什么都不用改</b>——因为 http 的 gate 通过 <code>ctx.waterfall("http/request", ...)</code> 派发事件，没有监听者时链直接走到 <code>fallback=call_next</code>。这就是“能力 = 插件行”的最直观演示。</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     05 插件逐个拆解
+============================================================ -->
+<section id="s5">
+  <h2><span class="no">§05</span>插件逐个拆解（10 个文件）</h2>
+  <div class="rule"></div>
+  <p class="lead">每个插件都遵守同一个形状：<code>def plugin(ctx, config)</code> →（可选地）提供服务 / 监听事件 / 注册效果。下面按“它提供什么 → 它依赖什么 → 关键代码”的顺序讲。</p>
+
+  <h3>5.1 logger_plugin.py —— 唯一“给所有人用”的基础服务</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/logger_plugin.py</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    <span class="tok-c">"""注册 ``log`` 服务：``logger = ctx.get("log")`` 后按需取子 logger。"""</span></span>
+<span class="l">    level_name = str(config.get(<span class="tok-s">"level"</span>, <span class="tok-s">"INFO"</span>)).upper()</span>
+<span class="l">    level = getattr(logging, level_name, logging.INFO)</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">get_logger</span>(name: str = <span class="tok-s">"cordis"</span>) -&gt; logging.Logger:</span>
+<span class="l">        logger = logging.getLogger(name)</span>
+<span class="l">        <span class="tok-k">if not</span> logger.handlers:</span>
+<span class="l">            handler = logging.StreamHandler()</span>
+<span class="l">            handler.setFormatter(logging.Formatter(_FORMAT))</span>
+<span class="l">            logger.addHandler(handler)</span>
+<span class="l">            logger.propagate = False</span>
+<span class="l">        logger.setLevel(level)</span>
+<span class="l">        <span class="tok-k">return</span> logger</span>
+<span class="l"></span>
+<span class="l">    ctx.provide(<span class="tok-s">"log"</span>, get_logger)</span></code></pre>
+  </div>
+  <ul>
+    <li><b>提供</b>：<code>log</code> 服务——值是一个<b>工厂函数</b>（不是 logger 实例）。这样任何插件可以 <code>ctx.get("log")("quota")</code> 拿到自己名字的 logger，避免共享同一 logger 名。</li>
+    <li><b>亮点</b>：服务值可以是任意 Python 对象，函数当然也可以。这是“服务 = 接口”的体现：消费方只知道可调用，不知道内部用 stdlib。</li>
+  </ul>
+
+  <h3>5.2 http_service.py —— 全示例最核心的插件</h3>
+  <p>它做三件事：提供 <code>routes</code>、提供 <code>app</code>、装配请求 gate。先看 <code>RouteRegistry</code>——这是“可逆路由”的载体：</p>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/http_service.py · RouteRegistry</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">class</span> <span class="tok-t">RouteRegistry</span>:</span>
+<span class="l">    <span class="tok-c">"""FastAPI 路由注册表：同名 (method, path) 可整体替换（重载安全）。"""</span></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">__init__</span>(self, app: FastAPI) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">        self._app = app</span>
+<span class="l">        self._routes: dict[tuple[str, str], Any] = {}</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">add</span>(</span>
+<span class="l">        self, method: str, path: str, handler: Callable[..., Any], *, name: str | <span class="tok-t">None</span> = <span class="tok-t">None</span>,</span>
+<span class="l">    ) -&gt; Callable[[], <span class="tok-t">None</span>]:</span>
+<span class="l">        <span class="tok-c">"""注册路由并返回卸载函数；已存在同名路由时先移除旧条目。"""</span></span>
+<span class="l">        key = (method.upper(), path)</span>
+<span class="l">        old = self._routes.get(key)</span>
+<span class="l">        <span class="tok-k">if</span> old <span class="tok-k">is not</span> <span class="tok-t">None</span> <span class="tok-k">and</span> old <span class="tok-k">in</span> self._app.routes:</span>
+<span class="l">            self._app.routes.remove(old)</span>
+<span class="l">        route = self._app.add_api_route(</span>
+<span class="l">            path, handler, methods=[method.upper()], name=name <span class="tok-k">or</span> handler.__name__</span>
+<span class="l">        )</span>
+<span class="l">        self._routes[key] = route</span>
+<span class="l"></span>
+<span class="l">        <span class="tok-k">def</span> <span class="tok-t">undo</span>() -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">            <span class="tok-k">if</span> self._routes.get(key) <span class="tok-k">is</span> route:</span>
+<span class="l">                self._routes.pop(key, <span class="tok-t">None</span>)</span>
+<span class="l">                <span class="tok-k">if</span> route <span class="tok-k">in</span> self._app.routes:</span>
+<span class="l">                    self._app.routes.remove(route)</span>
+<span class="l"></span>
+<span class="l">        <span class="tok-k">return</span> undo</span></code></pre>
+  </div>
+  <div class="callout why">
+    <div class="t">为什么 router 也插件化？为什么不用 FastAPI 自带的 APIRouter？</div>
+    <p>APIRouter 一旦 <code>include_router</code> 就<b>没有“取消”操作</b>——HMR 重载业务插件时，旧路由会留在应用里变成僵尸（404 文档里出现、路由重复注册报错）。<code>RouteRegistry.add</code> 返回一个 <code>undo</code> 闭包：<b>注册与注销成对出现</b>，重载时先 <code>undo()</code> 旧的、再注册新的，同名路由整体替换。这是“效果可逆”在 Web 层面的直接应用，也是本 example 相对传统 FastAPI 工程最大的差异点。</p>
+  </div>
+
+  <p>再看 <code>plugin()</code> 主体——gate 链路：</p>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/http_service.py · plugin</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">@inject</span>([<span class="tok-s">"fastapi_app"</span>, <span class="tok-s">"log"</span>])</span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    app: FastAPI = ctx.fastapi_app</span>
+<span class="l">    logger = ctx.log(<span class="tok-s">"http"</span>)</span>
+<span class="l">    routes = RouteRegistry(app)</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">async def</span> <span class="tok-t">gate</span>(request: Request, call_next: Callable[..., Any]) -&gt; Response:</span>
+<span class="l">        <span class="tok-c"># 认证插件可缺省：不存在时直通。</span></span>
+<span class="l">        auth = ctx.get(<span class="tok-s">"auth"</span>)</span>
+<span class="l">        <span class="tok-k">if</span> auth <span class="tok-k">is not</span> <span class="tok-t">None</span>:</span>
+<span class="l">            rejected = auth.authenticate(request)</span>
+<span class="l">            <span class="tok-k">if</span> rejected <span class="tok-k">is not</span> <span class="tok-t">None</span>:</span>
+<span class="l">                <span class="tok-k">return</span> rejected</span>
+<span class="l">        tenant = getattr(request.state, <span class="tok-s">"tenant"</span>, <span class="tok-t">None</span>)</span>
+<span class="l">        <span class="tok-c"># 瀑布链：插件中途拦截（如限流）则直接返回；链尾执行真实处理。</span></span>
+<span class="l">        <span class="tok-k">return await</span> ctx.waterfall(</span>
+<span class="l">            <span class="tok-s">"http/request"</span>,</span>
+<span class="l">            tenant,</span>
+<span class="l">            request,</span>
+<span class="l">            fallback=<span class="tok-k">lambda</span> *args: call_next(request),</span>
+<span class="l">        )</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-c"># gate 由宿主中间件在请求期读取；插件卸载时移除（中间件恢复直通）。</span></span>
+<span class="l">    app.state.cordis_gate = gate</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">undo</span>() -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">        <span class="tok-k">if</span> getattr(app.state, <span class="tok-s">"cordis_gate"</span>, <span class="tok-t">None</span>) <span class="tok-k">is</span> gate:</span>
+<span class="l">            delattr(app.state, <span class="tok-s">"cordis_gate"</span>)</span>
+<span class="l"></span>
+<span class="l">    ctx.effect(<span class="tok-k">lambda</span>: undo)</span>
+<span class="l"></span>
+<span class="l">    ctx.provide(<span class="tok-s">"routes"</span>, routes)</span>
+<span class="l">    ctx.provide(<span class="tok-s">"app"</span>, app)</span>
+<span class="l">    logger.info(<span class="tok-s">"http service ready: %s"</span>, config.get(<span class="tok-s">"title"</span>, <span class="tok-s">"Cordis API"</span>))</span></code></pre>
+  </div>
+  <ul>
+    <li><b>gate</b> 是真正的请求入口：<b>先认证（可选服务）→ 拿租户 → 走 <code>http/request</code> 瀑布 → 链尾 = <code>call_next</code></b>（把控制权交回 FastAPI 栈，命中路由）。</li>
+    <li><code>ctx.get("auth")</code>：认证是<b>可选服务</b>——没装认证插件就直通。这就是“能力可插拔”在安全层上的表达。</li>
+    <li><code>ctx.effect(lambda: undo)</code>：注意是 <code>lambda: undo</code>（返回函数本身作为卸载逻辑），<b>不是</b> <code>lambda: undo()</code>——后者会在注册的瞬间就把路由删掉、并因返回 None 让 fiber 什么都登记不到（效果账本为空，之后卸载时无事可做）。这是本项目最常踩的坑，§07.2 细讲。</li>
+    <li><code>ctx.provide("routes", routes)</code>：注册表作为服务交给业务插件——业务插件 <b>不需要 import</b> RouteRegistry，只用名字 <code>"routes"</code> 调 <code>.add(...)</code>。</li>
+  </ul>
+
+  <h3>5.3 tenant.py —— realm 隔离 + 版本契约</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/tenant.py · 要点</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">class</span> <span class="tok-t">TenantRegistry</span>:</span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">register</span>(self, ctx: Context, name: str) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">        <span class="tok-c">"""为 *name* 建立独立 realm 的服务作用域，并在其中提供 tasks 存储。"""</span></span>
+<span class="l">        scoped = ctx.isolate(<span class="tok-s">"tasks"</span>, name)</span>
+<span class="l">        store = TaskStore(name)</span>
+<span class="l">        <span class="tok-c"># (realm=name, name="tasks") 与其它租户互不可见。</span></span>
+<span class="l">        scoped.provide(<span class="tok-s">"tasks"</span>, store)</span>
+<span class="l">        self._scopes[name] = scoped</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">store</span>(self, name: str) -&gt; TaskStore:</span>
+<span class="l">        <span class="tok-c">"""经该租户的隔离作用域解析任务存储（realm 服务查找）。"""</span></span>
+<span class="l">        scoped = self._scopes[name]</span>
+<span class="l">        <span class="tok-k">return</span> scoped.get(<span class="tok-s">"tasks"</span>)</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    <span class="tok-c">"""按配置注册全部租户；registry 服务带版本号供契约校验。"""</span></span>
+<span class="l">    registry = TenantRegistry()</span>
+<span class="l">    tenants = list(config.get(<span class="tok-s">"tenants"</span>) <span class="tok-k">or</span> ())</span>
+<span class="l">    <span class="tok-k">for</span> name <span class="tok-k">in</span> tenants:</span>
+<span class="l">        registry.register(ctx, name)</span>
+<span class="l">    ctx.provide(<span class="tok-s">"tenants"</span>, registry, version=<span class="tok-s">"1.0"</span>)</span></code></pre>
+  </div>
+  <ul>
+    <li><code>ctx.isolate("tasks", name)</code>：创建<b>子上下文</b>并指定：在这个作用域里，服务名 <code>tasks</code> 属于 realm <code>name</code>。于是全局服务的键变成 <code>(realm, name)</code>——<code>("acme","tasks")</code> 与 <code>("globex","tasks")</code> 是<b>物理上不同的键</b>。</li>
+    <li><code>scoped.get("tasks")</code>：从该租户的作用域解析，只能拿到自己的存储。租户隔离<b>不是业务层的 <code>if tenant == ...</code> 约定</b>，而是容器层的键空间隔离——globex 的请求即使代码写错也“看不见” acme 的数据。</li>
+    <li><code>provide(..., version="1.0")</code>：给 <code>tenants</code> 服务打版本号，供消费方 <code>@require</code> 校验（见 5.7）。</li>
+  </ul>
+
+  <h3>5.4 auth.py —— 认证是一份“契约”，不是内置功能</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/auth.py · 要点</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">class</span> <span class="tok-t">AuthService</span>:</span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">authenticate</span>(self, request: Request) -&gt; JSONResponse | <span class="tok-t">None</span>:</span>
+<span class="l">        <span class="tok-k">if</span> request.url.path <span class="tok-k">in</span> self._public_paths:</span>
+<span class="l">            <span class="tok-c"># 公开路径（如健康检查）：免认证直通。</span></span>
+<span class="l">            <span class="tok-k">return</span> <span class="tok-t">None</span></span>
+<span class="l">        tenant = request.headers.get(<span class="tok-s">"x-tenant"</span>)</span>
+<span class="l">        key = request.headers.get(<span class="tok-s">"x-api-key"</span>)</span>
+<span class="l">        <span class="tok-k">if</span> tenant <span class="tok-k">and</span> self._keys.get(tenant) == key:</span>
+<span class="l">            request.state.tenant = tenant</span>
+<span class="l">            <span class="tok-k">return</span> <span class="tok-t">None</span></span>
+<span class="l">        <span class="tok-k">return</span> JSONResponse(</span>
+<span class="l">            {<span class="tok-s">"error"</span>: <span class="tok-s">"unauthorized"</span>, <span class="tok-s">"tenant"</span>: tenant},</span>
+<span class="l">            status_code=401,</span>
+<span class="l">            headers={<span class="tok-s">"www-authenticate"</span>: <span class="tok-s">"X-API-Key"</span>},</span>
+<span class="l">        )</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    <span class="tok-c">"""注册 ``auth`` 服务（http 中间件缺省感知其存在）。"""</span></span>
+<span class="l">    public = frozenset(str(p) <span class="tok-k">for</span> p <span class="tok-k">in</span> config.get(<span class="tok-s">"public_paths"</span>) <span class="tok-k">or</span> ())</span>
+<span class="l">    ctx.provide(<span class="tok-s">"auth"</span>, AuthService(dict(config.get(<span class="tok-s">"keys"</span>) <span class="tok-k">or</span> {}), public))</span></code></pre>
+  </div>
+  <ul>
+    <li><b>契约</b>：<code>authenticate(request) → JSONResponse | None</code>——成功返回 <code>None</code>（并把租户写进 <code>request.state.tenant</code>），失败返回拒绝对象。gate 只认识这个接口，<b>不认识 AuthService 这个类</b>。</li>
+    <li><code>public_paths</code>：白名单（本例只有 <code>/api/health</code>），公开路径直接放行且<b>不绑定租户</b>——所以健康检查不需要认证头。</li>
+    <li>这为 §05.10 的 JWT 替换埋下伏笔：<b>换认证 = 提供同名 <code>auth</code> 服务的另一个插件</b>。</li>
+  </ul>
+
+  <h3>5.5 quota.py —— 瀑布链上的一环（拦路虎）</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/quota.py</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    limit = int(config.get(<span class="tok-s">"limit"</span>, 5))</span>
+<span class="l">    window = float(config.get(<span class="tok-s">"window"</span>, 30))</span>
+<span class="l">    <span class="tok-c"># 状态：租户 → [窗口起点, 已用次数]</span></span>
+<span class="l">    windows: dict[str, list[float]] = {}</span>
+<span class="l">    logger = ctx.get(<span class="tok-s">"log"</span>)</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">check</span>(tenant: str | <span class="tok-t">None</span>, request: Request, next_: Callable[..., Any]) -&gt; Any:</span>
+<span class="l">        <span class="tok-c"># 公开路径（无租户绑定）的请求不限流（如健康检查轮询）。</span></span>
+<span class="l">        <span class="tok-k">if</span> tenant <span class="tok-k">is</span> <span class="tok-t">None</span>:</span>
+<span class="l">            <span class="tok-k">return</span> next_()</span>
+<span class="l">        now = time.monotonic()</span>
+<span class="l">        row = windows.setdefault(tenant <span class="tok-k">or</span> <span class="tok-s">"&lt;none&gt;"</span>, [now, 0.0])</span>
+<span class="l">        <span class="tok-k">if</span> now - row[0] &gt;= window:</span>
+<span class="l">            row[0], row[1] = now, 0.0</span>
+<span class="l">        row[1] += 1</span>
+<span class="l">        <span class="tok-k">if</span> row[1] &gt; limit:</span>
+<span class="l">            <span class="tok-k">if</span> logger <span class="tok-k">is not</span> <span class="tok-t">None</span>:</span>
+<span class="l">                logger(<span class="tok-s">"quota"</span>).warning(<span class="tok-s">"rate limited tenant=%s"</span>, tenant)</span>
+<span class="l">            <span class="tok-k">return</span> JSONResponse(</span>
+<span class="l">                {<span class="tok-s">"error"</span>: <span class="tok-s">"rate_limited"</span>, <span class="tok-s">"tenant"</span>: tenant}, status_code=429</span>
+<span class="l">            )</span>
+<span class="l">        <span class="tok-k">return</span> next_()</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-c"># 瀑布链监听器：http 中间件每次请求都会运行本链。</span></span>
+<span class="l">    ctx.on(<span class="tok-s">"http/request"</span>, check)</span></code></pre>
+  </div>
+  <ul>
+    <li><b>拦截语义</b>：<code>check</code> 拿到 <code>next_</code> 参数——超标时<b>不调用 <code>next_()</code></b> 而是直接返回 429，链条短路。这就是“中间件 = 瀑布链上的可插拔环节”：<b>不调 <code>next</code> 即拦截</b>（对齐 Node Koa/Connect 思路）。</li>
+    <li><b>可选依赖</b>：<code>ctx.get("log")</code> 可能返回 <code>None</code>（logger 插件没装）——所以先判空再用。日志在 cordis 里<b>是能力，不是基础设施</b>。</li>
+    <li><b>状态在插件闭包里</b>：<code>windows</code> 字典是 <code>plugin()</code> 的局部变量。HMR 重载后旧变量随旧 fiber 一起被丢弃，<b>计数自动归零</b>——这是特性不是 bug（§07.6）。</li>
+  </ul>
+
+  <h3>5.6 audit.py —— 事件监听（解耦的旁观者）</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/audit.py</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l">_EVENTS = (<span class="tok-s">"task/created"</span>, <span class="tok-s">"task/deleted"</span>)</span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    prefix = str(config.get(<span class="tok-s">"event_prefix"</span>, <span class="tok-s">""</span>))</span>
+<span class="l">    logger = ctx.get(<span class="tok-s">"log"</span>)</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">audit</span>(event: str, tenant: str, task: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">        <span class="tok-k">if</span> logger <span class="tok-k">is not</span> <span class="tok-t">None</span>:</span>
+<span class="l">            logger(f<span class="tok-s">"audit.{event}"</span>).info(</span>
+<span class="l">                <span class="tok-s">"%s tenant=%s task=%s"</span>, prefix, tenant, task.get(<span class="tok-s">"id"</span>)</span>
+<span class="l">            )</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">for</span> event <span class="tok-k">in</span> _EVENTS:</span>
+<span class="l">        <span class="tok-c"># 监听器随本插件 fiber 回收（HMR 重载时自动清理）。</span></span>
+<span class="l">        <span class="tok-c"># 注意默认参数绑定：避免闭包捕获循环变量。</span></span>
+<span class="l">        ctx.on(event, <span class="tok-k">lambda</span> *args, _event=event: audit(_event, *args))</span></code></pre>
+  </div>
+  <ul>
+    <li><b>旁观者模式</b>：audit 不认识 tasks，tasks 也不认识 audit。<code>tasks</code> 发事件 <code>ctx.emit("task/created", tenant, task)</code>，audit 只听自己关心的两个事件名——<b>新增审计需求 = 新生效，不需要改业务代码</b>。</li>
+    <li><b>循环变量捕获坑</b>：<code>lambda *args, _event=event</code> —— 把 <code>event</code> 做成<b>默认参数</b>在定义时快照。若直接 <code>lambda *args: audit(event, *args)</code>，循环结束后三个 lambda 都会读到最后一个 <code>event</code>（经典 Python 闭包坑）。</li>
+    <li><code>ctx.on(...)</code> 返回的监听器<b>自动进入当前 fiber 的效果账本</b>：插件卸载/HMR 重载时监听器随之移除，不会留下“幽灵监听”重复触发。</li>
+  </ul>
+
+  <h3>5.7 tasks.py —— 业务插件（响应式依赖 + 事件 + 埋点）</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/tasks.py · 要点</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">@inject</span>([<span class="tok-s">"routes"</span>, <span class="tok-s">"tenants"</span>])</span>
+<span class="l"><span class="tok-k">@require</span>(<span class="tok-s">"tenants"</span>, <span class="tok-s">"&gt;=1.0"</span>)</span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    routes = ctx.routes</span>
+<span class="l">    registry: TenantRegistry = ctx.tenants</span>
+<span class="l">    logger = ctx.get(<span class="tok-s">"log"</span>)</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">bump</span>(name: str) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">        metrics = ctx.get(<span class="tok-s">"metrics"</span>)</span>
+<span class="l">        <span class="tok-k">if</span> metrics <span class="tok-k">is not</span> <span class="tok-t">None</span>:</span>
+<span class="l">            metrics.bump(name)</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">async def</span> <span class="tok-t">create_task</span>(request: Request) -&gt; Response:</span>
+<span class="l">        payload = <span class="tok-k">await</span> request.json()</span>
+<span class="l">        title = str(payload.get(<span class="tok-s">"title"</span>) <span class="tok-k">or</span> <span class="tok-s">""</span>).strip()</span>
+<span class="l">        <span class="tok-k">if not</span> title:</span>
+<span class="l">            <span class="tok-k">return</span> JSONResponse({<span class="tok-s">"error"</span>: <span class="tok-s">"title_required"</span>}, status_code=422)</span>
+<span class="l">        store = store_for(request)</span>
+<span class="l">        task = store.create(title, priority=int(payload.get(<span class="tok-s">"priority"</span>, 1)))</span>
+<span class="l">        ctx.emit(<span class="tok-s">"task/created"</span>, request.state.tenant, task)</span>
+<span class="l">        bump(<span class="tok-s">"tasks.created"</span>)</span>
+<span class="l">        <span class="tok-k">return</span> JSONResponse(task, status_code=201)</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-c"># 注册路由并登记可逆 disposer（HMR 重载时整体替换）。</span></span>
+<span class="l">    undos = [</span>
+<span class="l">        routes.add(<span class="tok-s">"GET"</span>, <span class="tok-s">"/api/tasks"</span>, list_tasks, name=<span class="tok-s">"tasks.list"</span>),</span>
+<span class="l">        routes.add(<span class="tok-s">"POST"</span>, <span class="tok-s">"/api/tasks"</span>, create_task, name=<span class="tok-s">"tasks.create"</span>),</span>
+<span class="l">        routes.add(<span class="tok-s">"GET"</span>, <span class="tok-s">"/api/tasks/{task_id}"</span>, get_task, name=<span class="tok-s">"tasks.get"</span>),</span>
+<span class="l">        routes.add(<span class="tok-s">"DELETE"</span>, <span class="tok-s">"/api/tasks/{task_id}"</span>, delete_task, name=<span class="tok-s">"tasks.delete"</span>),</span>
+<span class="l">    ]</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">undo_all</span>() -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">        <span class="tok-k">for</span> undo <span class="tok-k">in</span> undos:</span>
+<span class="l">            undo()</span>
+<span class="l"></span>
+<span class="l">    ctx.effect(<span class="tok-k">lambda</span>: undo_all)</span></code></pre>
+  </div>
+  <ul>
+    <li><b><code>@inject(["routes", "tenants"])</code></b>：声明硬依赖。装配时 <code>routes</code>/<code>tenants</code> 尚未提供 → fiber 保持 PENDING；provider 出现后 <code>ctx._notify</code> 触发 <code>refresh()</code> 自动激活并<b>现在才</b>注册路由。</li>
+    <li><b><code>@require("tenants", "&gt;=1.0")</code></b>：版本契约——tenant 提供的 <code>tenants</code> 必须 ≥ 1.0 才激活。约束不满足同样是软等待（不报错），是依赖升级的护栏。</li>
+    <li><b>业务与基础设施解耦</b>：<code>store = registry.store(request.state.tenant)</code>——只经 <code>ctx.tenants</code> 这一服务拿存储，自己<b>不 import</b> 任何存储类。<code>bump()</code> 用 <code>ctx.get("metrics")</code> 可选埋点：指标插件删了，业务照常跑。</li>
+    <li><b>事件向上传播</b>：<code>ctx.emit("task/created", ...)</code> 让审计等旁观者感知——业务自己<b>不做</b>审计，只<b>发布事实</b>。</li>
+  </ul>
+
+  <h3>5.8 metrics.py —— 提供计数服务的插件</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/metrics.py · 要点</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">@inject</span>([<span class="tok-s">"routes"</span>])</span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    ns = str(config.get(<span class="tok-s">"namespace"</span>, <span class="tok-s">"cordis"</span>))</span>
+<span class="l">    metrics = Metrics(ns)</span>
+<span class="l">    routes = ctx.routes</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">async def</span> <span class="tok-t">dump</span>(request: Request) -&gt; Response:</span>
+<span class="l">        <span class="tok-k">return</span> JSONResponse(metrics.snapshot())</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-c"># 路由注册可逆：fiber dispose 时自动卸载。</span></span>
+<span class="l">    undo = routes.add(<span class="tok-s">"GET"</span>, <span class="tok-s">"/api/metrics"</span>, dump, name=<span class="tok-s">"metrics.dump"</span>)</span>
+<span class="l">    ctx.effect(<span class="tok-k">lambda</span>: undo)</span>
+<span class="l"></span>
+<span class="l">    ctx.provide(<span class="tok-s">"metrics"</span>, metrics)</span></code></pre>
+  </div>
+  <ul>
+    <li>计数键 = <code>f"{namespace}.{name}"</code>，例如 <code>taskapi.tasks.created</code>。<code>Metrics.bump</code> 只是 <code>dict</code> 累加——插件内部状态，重载会重置（对演示足够）。</li>
+    <li><b>metrics 自己也要消费 <code>routes</code></b>——它既提供服务又注册路由：<b>插件可以同时是提供者和消费者</b>。</li>
+  </ul>
+
+  <h3>5.9 health.py —— 最简单的插件（3 个要点）</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/health.py</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">@inject</span>([<span class="tok-s">"routes"</span>, <span class="tok-s">"tenants"</span>])</span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    routes = ctx.routes</span>
+<span class="l">    registry = ctx.tenants</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">async def</span> <span class="tok-t">health</span>(request: Request) -&gt; Response:</span>
+<span class="l">        <span class="tok-k">return</span> JSONResponse({</span>
+<span class="l">            <span class="tok-s">"status"</span>: <span class="tok-s">"ok"</span>,</span>
+<span class="l">            <span class="tok-s">"tenants"</span>: registry.tenants(),</span>
+<span class="l">        })</span>
+<span class="l"></span>
+<span class="l">    undo = routes.add(<span class="tok-s">"GET"</span>, <span class="tok-s">"/api/health"</span>, health, name=<span class="tok-s">"health.check"</span>)</span>
+<span class="l">    ctx.effect(<span class="tok-k">lambda</span>: undo)</span></code></pre>
+  </div>
+  <p>健康检查从 <code>tenants</code> 服务读出租户列表——<b>一个只读消费者</b>，把“系统里有哪些租户”暴露成路由。它在 <code>auth.public_paths</code> 白名单里，所以无需认证。</p>
+
+  <h3>5.10 jwt_auth.py —— 同契约替代实现（本示例的重点教学件）</h3>
+  <p>它<b>不是</b>第 10 个插件，而是 <code>auth</code> 的<b>替代件</b>：与 <code>AuthService</code> 实现同一个契约 <code>authenticate(request) → Response | None</code>，因此 app.yml 里换一行 <code>url</code> 即可整体切换认证方式。</p>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">plugins/jwt_auth.py · 要点</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">class</span> <span class="tok-t">JwtAuthService</span>:</span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">issue</span>(self, tenant: str, *, ttl: int = 3600) -&gt; str:</span>
+<span class="l">        <span class="tok-c">"""签发（管理端/测试用）：HS256 三段 JWT。"""</span></span>
+<span class="l">        header = {<span class="tok-s">"alg"</span>: <span class="tok-s">"HS256"</span>, <span class="tok-s">"typ"</span>: <span class="tok-s">"JWT"</span>}</span>
+<span class="l">        payload = {</span>
+<span class="l">            <span class="tok-s">"sub"</span>: tenant, <span class="tok-s">"iss"</span>: self._issuer,</span>
+<span class="l">            <span class="tok-s">"aud"</span>: self._audience, <span class="tok-s">"exp"</span>: int(time.time()) + ttl,</span>
+<span class="l">        }</span>
+<span class="l">        signing = <span class="tok-s">b"."</span>.join(</span>
+<span class="l">            (_b64(json.dumps(header).encode()), _b64(json.dumps(payload).encode()))</span>
+<span class="l">        )</span>
+<span class="l">        signature = hmac.new(self._secret, signing, hashlib.sha256).digest()</span>
+<span class="l">        <span class="tok-k">return</span> (signing + <span class="tok-s">b"."</span> + _b64(signature)).decode()</span>
+<span class="l"></span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">authenticate</span>(self, request: Request) -&gt; JSONResponse | <span class="tok-t">None</span>:</span>
+<span class="l">        <span class="tok-c"># 契约入口：结构/签名/iss/aud/exp 任一不对 → 401；对 → state.tenant = sub</span></span>
+<span class="l">        <span class="tok-k">if</span> request.url.path <span class="tok-k">in</span> self._public_paths:</span>
+<span class="l">            <span class="tok-k">return</span> <span class="tok-t">None</span></span>
+<span class="l">        header = request.headers.get(<span class="tok-s">"authorization"</span>, <span class="tok-s">""</span>)</span>
+<span class="l">        <span class="tok-k">if not</span> header.startswith(<span class="tok-s">"Bearer "</span>):</span>
+<span class="l">            <span class="tok-k">return</span> self._reject(<span class="tok-s">"missing_token"</span>)</span>
+<span class="l">        parts = header[7:].split(<span class="tok-s">"."</span>)</span>
+<span class="l">        <span class="tok-k">if</span> len(parts) != 3:</span>
+<span class="l">            <span class="tok-k">return</span> self._reject(<span class="tok-s">"invalid_token"</span>)</span>
+<span class="l">        signing = f<span class="tok-s">"{parts[0]}.{parts[1]}"</span>.encode()</span>
+<span class="l">        expected = hmac.new(self._secret, signing, hashlib.sha256).digest()</span>
+<span class="l">        <span class="tok-k">if not</span> hmac.compare_digest(signature, expected):</span>
+<span class="l">            <span class="tok-k">return</span> self._reject(<span class="tok-s">"invalid_token"</span>)</span>
+<span class="l">        <span class="tok-c"># ... 校验 iss / aud / exp，通过后：</span></span>
+<span class="l">        request.state.tenant = str(payload.get(<span class="tok-s">"sub"</span>) <span class="tok-k">or</span> <span class="tok-s">""</span>)</span>
+<span class="l">        <span class="tok-k">return</span> <span class="tok-t">None</span></span>
+<span class="l"></span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">plugin</span>(ctx: Context, config: dict[str, Any]) -&gt; <span class="tok-t">None</span>:</span>
+<span class="l">    <span class="tok-c">"""注册 ``auth`` 服务（同名契约，替换 api-key 认证）。"""</span></span>
+<span class="l">    ctx.provide(<span class="tok-s">"auth"</span>, JwtAuthService(secret=..., issuer=..., audience=..., public_paths=...))</span></code></pre>
+  </div>
+  <p>切换三步：</p>
+  <ol>
+    <li>app.yml 里 auth 插件的 <code>url</code> 改为 <code>plugins.jwt_auth:plugin</code>；</li>
+    <li>config 换为 <code>secret</code> / <code>issuer</code> / <code>audience</code> / <code>public_paths</code>；</li>
+    <li>请求头从 <code>X-Tenant + X-API-Key</code> 换成 <code>Authorization: Bearer &lt;token&gt;</code>（token 用 <code>service.issue("acme")</code> 签发）。</li>
+  </ol>
+  <p>http 的 gate、tasks、quota、audit——<b>零改动</b>。这就是“服务契约 + 声明式装配”的扩展力：<b>插件间只认接口不认类，换实现 = 换配置</b>。</p>
+
+  <div class="callout warn">
+    <div class="t">一个容易混淆的点</div>
+    <p><code>jwt_auth.py</code> 的正常使用方式是<b>与 <code>auth.py</code> 二选一</b>：<code>app.yml</code> 里同一时间只有一行 <code>id: auth</code>。如果两个都装，第二次 <code>ctx.provide("auth", ...)</code> 会抛 <code>ServiceConflict</code>（同名服务不能双提供）——这是 Cordis 服务的<b>显式冲突保护</b>，防止你“不声不响地覆盖”了别人的实现。</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     06 一次请求的旅程
+============================================================ -->
+<section id="s6">
+  <h2><span class="no">§06</span>一次请求的完整旅程（GET /api/tasks）</h2>
+  <div class="rule"></div>
+  <p class="lead">假设客户端已经启动服务，用 <code>acme</code> 租户创建过一条任务。现在发送：
+  <code>curl -H "X-Tenant: acme" -H "X-API-Key: key-acme" http://127.0.0.1:8000/api/tasks</code>。
+  下面每一层由哪个插件负责、走哪段代码，全部标注。</p>
+
+  <div class="flow">
+    <div class="step t1"><div class="n">1</div><div class="card">
+      <div class="h">uvicorn 接收请求 → FastAPI 中间件栈</div>
+      <p><code>CordisGateMiddleware.dispatch()</code>（http_service.py:35）是宿主静态装的那一个。它读 <code>request.app.state.cordis_gate</code>：gate 存在则交给 gate，不存在则直接 <code>call_next</code>（比如装配失败/插件全卸完时，服务仍能响应——虽然此时没有路由）。</p>
+    </div></div>
+    <div class="step t1"><div class="n">2</div><div class="card">
+      <div class="h">gate 第 1 步：认证（可插拔）</div>
+      <p><code>ctx.get("auth")</code> 取到 AuthService → <code>authenticate(request)</code>：校验 <code>x-tenant</code> + <code>x-api-key</code> 匹配。通过 → 写 <code>request.state.tenant = "acme"</code> 并返回 None。失败 → 直接 <b>401</b>，停止（不会进瀑布链，更不会命中路由）。</p>
+    </div></div>
+    <div class="step t1"><div class="n">3</div><div class="card">
+      <div class="h">gate 第 2 步：进入 http/request 瀑布链</div>
+      <p><code>ctx.waterfall("http/request", tenant, request, fallback=lambda *args: call_next(request))</code>。参数（<code>tenant</code>、<code>request</code>）被传递给链上每个监听器，<b>fallback 是链尾</b>：没有监听器拦截、或所有监听器都调用了 <code>next()</code> 时，执行最后一环。</p>
+    </div></div>
+    <div class="step t1"><div class="n">4</div><div class="card">
+      <div class="h">quota.check 作为链上第一（也是唯一）环节</div>
+      <p>tenant 非 None → 固定窗口计数：未超 <code>limit=5</code> → <code>return next_()</code> 放行；超了 → 直接返回 <b>429</b>，链短路，<code>call_next</code> 永远不会被调用。</p>
+    </div></div>
+    <div class="step t1"><div class="n">5</div><div class="card">
+      <div class="h">fallback：call_next(request)</div>
+      <p>控制权交回 FastAPI/Starlette，按路由表匹配 <code>GET /api/tasks</code> → 命中 <code>list_tasks</code>（tasks.py:35，由 tasks 插件注册）。</p>
+    </div></div>
+    <div class="step t1"><div class="n">6</div><div class="card">
+      <div class="h">list_tasks：按租户取存储 + 分页 + 埋点</div>
+      <p><code>registry.store(request.state.tenant)</code> → 经 <code>("acme","tasks")</code> 这个 realm 键拿到 acme 的 TaskStore → <code>.list()</code> → 截取 <code>page_size=20</code> → <code>bump("tasks.list")</code>（若 metrics 插件在）→ JSONResponse。</p>
+    </div></div>
+    <div class="step"><div class="n">7</div><div class="card">
+      <div class="h">响应：FastAPI 原路返回</div>
+      <p><code>call_next(request)</code> 拿到 handler 的 Response 后原路返回，gate 与中间件如实传递。响应体示例：<code>{"items":[{"id":"acme-1","title":"写文档","priority":2,"status":"open","tenant":"acme"}],"count":1}</code>。</p>
+    </div></div>
+  </div>
+
+  <h3>6.1 失败路径一览（对照测试）</h3>
+  <table class="tbl-wrap">
+    <thead><tr><th>场景</th><th>在哪层被拦下</th><th>响应</th><th>对应测试</th></tr></thead>
+    <tbody>
+      <tr><td>不带任何认证头</td><td>gate 认证（auth.authenticate）</td><td>401 <code>unauthorized</code> + <code>www-authenticate</code></td><td><code>test_unauthorized</code></td></tr>
+      <tr><td>带租户但 key 错</td><td>gate 认证（键值不匹配）</td><td>401 <code>unauthorized</code></td><td><code>test_unauthorized</code></td></tr>
+      <tr><td>POST 无 title</td><td>路由处理（create_task）</td><td>422 <code>title_required</code></td><td>——</td></tr>
+      <tr><td>查不存在的 id</td><td>路由处理（get_task）</td><td>404 <code>not_found</code></td><td><code>test_task_crud_and_tenant_isolation</code></td></tr>
+      <tr><td>第 6 次请求（5 次后）</td><td>瀑布链（quota.check）</td><td>429 <code>rate_limited</code></td><td><code>test_rate_limit</code></td></tr>
+      <tr><td>globex 查任务</td><td>路由处理（realm 键空间）</td><td>200 但 <code>count:0</code></td><td><code>test_task_crud_and_tenant_isolation</code></td></tr>
+      <tr><td>公开路径 /api/health</td><td>认证放行（public_paths）</td><td>200 <code>tenants:[...]</code>，且 quota 不限流</td><td><code>test_health</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout why">
+    <div class="t">为什么 401 在中间件层而不是 FastAPI 的装饰器/依赖里？</div>
+    <p>因为认证<b>也是一份可替换的插件</b>。用 FastAPI 的 <code>Depends(get_current_user)</code> 的话，认证逻辑会写死在每个路由函数签名里——换 JWT 就得改全部路由。而 gate 里 <code>ctx.get("auth")</code> 一个调用，认的是<b>服务名</b>不是<b>类</b>——这正是“关注点可插拔”与“框架内置拦截器”的分水岭。代价是认证对 404（未注册路由）也生效：所有请求先过 gate 再匹配路由，顺序是“认证 → 路由”，不是“路由 → 认证”。</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     07 机制深挖
+============================================================ -->
+<section id="s7">
+  <h2><span class="no">§07</span>六个核心机制深挖</h2>
+  <div class="rule"></div>
+  <p class="lead">前六节是“是什么”，这一节回答“为什么成立”。每个机制都指出它在源码里的实现位置，让你不仅会用，还能说出原理。</p>
+
+  <h3>7.1 响应式依赖：为什么 tasks 排在 http 前面还能工作？</h3>
+  <div class="kv">
+    <dt>触发链</dt><dd><code>Loader.include(app.yml)</code> → 逐条 <code>_start_entry</code> → <code>context.plugin(plugin, config)</code> 创建 Fiber → <code>fiber.refresh()</code> 评估依赖。</dd>
+    <dt>软等待</dt><dd>dependency 未满足时 target=None，Fiber 停在 <code>PENDING</code>，<code>fiber.unsatisfied</code> 可查“在等谁”。<b>不报错</b>——等待是合法状态。</dd>
+    <dt>触发激活</dt><dd>提供者 <code>provide()</code> 时（且其 fiber 已 ACTIVE）→ <code>_notify([name])</code> → 遍历所有挂起纤维，谁 <code>inject</code> 了该名字就 <code>refresh()</code> → 目标可满足 → <code>_reload()</code>（LOADING → 执行插件 → ACTIVE）。</dd>
+  </div>
+  <p>所以 app.yml 里 <code>tasks</code> 先装，不会崩：它只是“等着”。等 <code>http</code> 提供 <code>routes</code>、<code>tenant</code> 提供 <code>tenants</code> 后，tasks 自动激活、此时才真正注册路由。**装配顺序无关**是响应式设计的直接推论——新增一个依赖更深的插件，也只需要在配置里加一行，不用考虑它排在谁的前面。</p>
+  <div class="callout try">
+    <div class="t">现场验证</div>
+    <p>启动日志会显示：http/tasks 的启动顺序与 app.yml 的物理顺序相反（tasks 最后才打“已激活”）。也可以在 REPL 里：<code>loader.fibers["tasks"].state</code> → <code>active</code>；若故意注释掉 http 段重启，该值保持 <code>pending</code> 且 <code>unsatisfied</code> = <code>{"routes": "missing", "tenants": ...}</code>。</p>
+  </div>
+
+  <h3>7.2 可逆效果：为什么必须是 <code>ctx.effect(lambda: undo)</code>？</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">cordis 语义（极易踩坑）</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-c"># ❌ 错：effect 会立即执行回调，把返回值当作“卸载逻辑”收集</span></span>
+<span class="l">ctx.effect(<span class="tok-k">lambda</span>: undo())   <span class="tok-c"># 立即调用了 undo！且返回 None → 什么都没被登记</span></span>
+<span class="l">ctx.effect(undo)            <span class="tok-c"># 立即调用了 undo（把 undo 当回调执行）→ 同样立即反注册</span></span>
+<span class="l"></span>
+<span class="l"><span class="tok-c"># ✅ 对：回调只是“产出”卸载函数，返回它即可</span></span>
+<span class="l">ctx.effect(<span class="tok-k">lambda</span>: undo)   <span class="tok-c"># 立即执行 lambda（返回 undo 本身），fiber 后来 LIFO 调用 undo()</span></span></code></pre>
+  </div>
+  <p>实现（fiber.py <code>effect()</code>）：<code>result = callback()</code> 先立即执行回调；返回值若是可调用对象则登记为 disposer。所以 <b>“注册”这个动作本身就是干净的</b>：不立即产生副作用，只是把<b>关于如何撤销副作用</b>的函数交给 fiber。卸载时 <code>_unload()</code> 按登记顺序<b>逆序</b>执行——先装的后拆，符合资源管理直觉。</p>
+  <div class="callout why">
+    <div class="t">为什么“单向 Listener”也要登记？</div>
+    <p>因为在 cordis 里<b>一切动态注册默认是可逆的</b>：<code>ctx.on(...)</code> 内部自己 <code>fiber.add_effect(undo)</code>；<code>ctx.provide(...)</code> 也返回 undo（卸载时 <code>_remove_fiber_services</code> 统一清）。于是“插件卸载 = 无残留”不是文档承诺，是机制保证——开发时少一类“为什么我改了哪里还保留着”的 bug。</p>
+  </div>
+
+  <h3>7.3 waterfall：中间件链长什么样？</h3>
+  <p>对比 Node 生态：Koa 的洋葱模型、Connect 的 <code>next()</code>。cordis 把链定义为<b>事件</b>：<code>ctx.waterfall(event, *args, fallback)</code> 收集该事件的监听器，依次调用 <code>listener(*args, next)</code>。每个监听器自己决定是否 <code>next()</code>；不调 = 拦截。链尾 = <code>fallback</code>（HTTP 场景就是真实处理）。</p>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">context.py · _run_waterfall（语义核心）</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">async def</span> <span class="tok-t">run</span>(index: int, values: tuple[Any, ...]) -&gt; Any:</span>
+<span class="l">    <span class="tok-k">if</span> index &gt;= len(listeners):</span>
+<span class="l">        <span class="tok-k">if</span> fallback <span class="tok-k">is</span> <span class="tok-t">None</span>: <span class="tok-k">return</span> <span class="tok-t">None</span></span>
+<span class="l">        <span class="tok-k">return await</span> await_maybe(fallback(*values))   <span class="tok-c"># 链尾</span></span>
+<span class="l">    listener = listeners[index]</span>
+<span class="l">    <span class="tok-k">def</span> <span class="tok-t">next_fn</span>(*next_args):</span>
+<span class="l">        <span class="tok-c"># 无参调用 next() 沿用当前参数，与 Node 中间件语义一致</span></span>
+<span class="l">        <span class="tok-k">return</span> run(index + 1, next_args <span class="tok-k">if</span> next_args <span class="tok-k">else</span> values)</span>
+<span class="l">    result = listener.handler(*values, next_fn)</span>
+<span class="l">    <span class="tok-k">return await</span> await_maybe(result)</span></code></pre>
+  </div>
+  <p>本例中 <code>http/request</code> 只有 quota 一个监听器，链 = <code>[quota.check] → fallback → call_next</code>。要想加“签名校验”“IP 黑白名单”“请求追踪”，都是<b>再写一个插件 + <code>ctx.on("http/request", ...)</code></b>——不用改 http 插件，也不用改 FastAPI 中间件栈。</p>
+
+  <h3>7.4 realm 隔离：globex 为什么“看不到” acme 的任务？</h3>
+  <p><code>ctx.isolate(name, realm)</code> 返回子上下文，其 <code>_isolation[name] = realm</code>。服务查找键 <code>_service_key(name) = (self._realm_for(name), name)</code>——<b>键里带了 realm</b>。所以：</p>
+  <ul>
+    <li><code>scoped_acme.provide("tasks", store_acme)</code> → 全局键 <code>("acme","tasks")</code>；</li>
+    <li><code>scoped_globex.provide("tasks", store_globex)</code> → 全局键 <code>("globex","tasks")</code>；</li>
+    <li><code>scoped_globex.get("tasks")</code> → 用自身的 realm 解析 → 只会命中 <code>("globex","tasks")</code>。<b>不存在的键返回 None，而不是“试试别的 realm”。</b></li>
+  </ul>
+  <div class="callout why">
+    <div class="t">为什么说这是“物理隔离”而不是“业务约定”？</div>
+    <p>传统的 <code>WHERE tenant = current_tenant</code> 依赖每个查询都写对 WHERE——漏写一处就串租户（bug 级漏洞）。realm 隔离下，<b>让数据不可达的不是权限检查，而是键空间本身</b>：查询接口拿不到别的 realm 的句柄。安全边界前置到了容器层。诚实边界：这是<b>协调式</b>隔离（防手滑、防插件边界），不是防恶意代码的 OS 沙箱。</p>
+  </div>
+
+  <h3>7.5 契约校验：<code>@require</code> 是怎么工作的？</h3>
+  <p><code>provide(version="1.0")</code> 把版本存进 ServiceEntry；<code>@require("tenants", "&gt;=1.0")</code> 用 PEP 440 specifier 做约束。评估时 <code>_requirement_reason(name, constraints)</code>：服务不存在 → “missing”；存在但版本不满足 → 原因字符串。此时 fiber 保持 PENDING，<b>不构成错误</b>——等提供方升级后再自动重评。约束可以是 specifier，也可以是 callable 谓词（如 <code>lambda svc: hasattr(svc, "query")</code>），可以叠加。</p>
+  <p>在这个 example 里：<code>tenants</code> 服务被 <code>tasks</code> 声明了 <code>&gt;=1.0</code> 约束。假设未来 tenant 插件改到 2.0（比如引入 SQL 存储），tasks 无需改动依然满足；若某插件要求 <code>&gt;=2.0</code> 而装配的是 1.x，它就安静地等待——<b>做版本护栏，不做崩溃炸弹</b>。</p>
+
+  <h3>7.6 HMR：改源码不重启，为什么“安全性”有保障？</h3>
+  <div class="flow">
+    <div class="step t1"><div class="n">1</div><div class="card">
+      <div class="h">变更被捕获</div>
+      <p>watchdog 监听 <code>plugins/</code>；编辑器原子保存（临时文件+rename，如 <code>sed -i</code>/Vim）被 <code>on_moved</code> 特殊处理为“一次新建”。</p>
+    </div></div>
+    <div class="step t1"><div class="n">2</div><div class="card">
+      <div class="h">依赖图分类</div>
+      <p><code>ModuleGraph</code>（运行时 <code>sys.meta_path</code> 追踪 + 已加载模块 AST 补全）知道谁 import 了谁，分类 accepted / declined（对齐 Node <code>analyzeChanges</code>）。</p>
+    </div></div>
+    <div class="step t1"><div class="n">3</div><div class="card">
+      <div class="h">事务式重载（回滚保护）</div>
+      <p>重载集 = 变更模块 + 受影响条目模块（拓扑序）。执行前快照插件与模块命名空间；任一失败 → 恢复快照、用<b>旧插件重新应用</b>。修改 <code>quota.py</code> 的 limit 阈值 → 只会重载 quota 一个条目。</p>
+    </div></div>
+    <div class="step"><div class="n">4</div><div class="card">
+      <div class="h">现场效果</div>
+      <p>限流窗口、计数器等插件内部状态归零 = <b>旧实例被完整替换</b>。如果你在 debug 一个限流 bug，改完保存后计数直接重置——记得这是特性。</p>
+    </div></div>
+  </div>
+  <p><b>边界</b>：仅纯 Python 源码模块可热替换；<code>__main__</code> 或 cordis_py 自身变更视为全量重启场景（不在范围）。HMR 不会重载宿主 <code>main.py</code>——改宿主需重启（这是对的：宿主是“组合点”，插件是“被组合物”）。</p>
+</section>
+
+<!-- ============================================================
+     08 动手实验
+============================================================ -->
+<section id="s8">
+  <h2><span class="no">§08</span>动手实验：跑起来 + 三个改造</h2>
+  <div class="rule"></div>
+  <p class="lead">复现路线与完整命令。建议一个终端跑服务、另一个终端敲 curl。</p>
+
+  <h3>8.1 跑起来</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">terminal · 安装与启动</span><span class="lang">bash</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-c"># 依赖：fastapi / uvicorn / httpx（测试）/ watchdog（HMR）/ pyyaml（app.yml）</span></span>
+<span class="l">cd examples/task_api</span>
+<span class="l">pip install -r requirements.txt</span>
+<span class="l">pip install -e <span class="tok-s">"../..[yaml,watch]"</span>   <span class="tok-c"># 或 pip install "cordis-python[yaml,watch]"</span></span>
+<span class="l"></span>
+<span class="l">python main.py --port 8000      <span class="tok-c"># --watch 默认 True（HMR 开启）</span></span>
+<span class="l"><span class="tok-c"># 看到日志：http service ready: Cordis Task API / 任务 CRUD 插件已激活</span></span></code></pre>
+  </div>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">terminal · 全流程 curl</span><span class="lang">bash</span><button class="copy">copy</button></div>
+    <pre><code><span class="l">curl -s http://127.0.0.1:8000/api/health</span>
+<span class="l"><span class="tok-c"># {"status":"ok","tenants":["acme","globex"]}</span></span>
+<span class="l"></span>
+<span class="l"><span class="tok-c"># 无认证 → 401</span></span>
+<span class="l">curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/api/tasks   <span class="tok-c"># 401</span></span>
+<span class="l"></span>
+<span class="l"><span class="tok-c"># acme 创建 + 列出</span></span>
+<span class="l">curl -s -H "X-Tenant: acme" -H "X-API-Key: key-acme" -H "Content-Type: application/json" \</span>
+<span class="l">     -d '{"title": "写文档", "priority": 2}' http://127.0.0.1:8000/api/tasks</span>
+<span class="l"><span class="tok-c"># 201 {"id":"acme-1",...}</span></span>
+<span class="l">curl -s -H "X-Tenant: acme" -H "X-API-Key: key-acme" http://127.0.0.1:8000/api/tasks</span>
+<span class="l"><span class="tok-c"># {"items":[...],"count":1}</span></span>
+<span class="l"></span>
+<span class="l"><span class="tok-c"># 隔离：globex 看不到 acme</span></span>
+<span class="l">curl -s -H "X-Tenant: globex" -H "X-API-Key: key-globex" http://127.0.0.1:8000/api/tasks</span>
+<span class="l"><span class="tok-c"># {"items":[],"count":0}</span></span>
+<span class="l"></span>
+<span class="l"><span class="tok-c"># 限流：连续第 6 次 → 429</span></span>
+<span class="l"><span class="tok-k">for</span> i <span class="tok-k">in</span> $(seq 1 8); <span class="tok-k">do</span></span>
+<span class="l">  curl -s -o /dev/null -w "%{http_code}\n" -H "X-Tenant: acme" -H "X-API-Key: key-acme" \</span>
+<span class="l">       http://127.0.0.1:8000/api/tasks</span>
+<span class="l"><span class="tok-k">done</span>   <span class="tok-c"># 200×5 → 429×3</span></span>
+<span class="l"></span>
+<span class="l">curl -s -H "X-Tenant: acme" -H "X-API-Key: key-acme" http://127.0.0.1:8000/api/metrics</span>
+<span class="l"><span class="tok-c"># {"taskapi.tasks.created":1,"taskapi.tasks.list":6}</span></span></code></pre>
+  </div>
+
+  <h3>8.2 实验一：热更限流阈值（改配置，不重启）</h3>
+  <p>把 <code>app.yml</code> 里 quota 段的 <code>limit: 5</code> 改为 <code>limit: 3</code> 保存——<b>不重启</b>，约 1 秒后（debounce 0.1s + 重读装配）生效。连续请求验证：第 4 次即 429。</p>
+  <div class="callout warn">
+    <div class="t">为什么"改代码默认值"没用？（本示例最常见的误区）</div>
+    <p>配置在启动时被 <code>Loader.include(app.yml)</code> 读入一次，<b>定格</b>在内存的 <code>entry.config</code> 里。此后：
+    (1) 改 <code>app.yml</code>（改值/注释/删键）——HMR 只监听 <code>plugins/</code>，配置文件不在监听范围，进程无感知；
+    (2) 改 <code>quota.py</code> 的 <code>config.get("limit", N)</code> 默认值——HMR 确实重载了代码，但重载时用的仍是<b>内存快照</b>（含旧的 <code>limit: 5</code>），默认值永远轮不到；
+    (3) 只有<b>重启</b>才会重新读盘，产生新快照。
+    所以：<b>HMR 承诺"改代码不重启"，"改配置不重启"由同一套 API 提供</b>——<code>hmr.watch_config(["app.yml"])</code>（cordis_py 内置 ConfigWatcher）+ <code>hmr.reload_config(path)</code>（手动触发）。它监听 app.yml 并调用 <code>loader.include()</code>，<code>reconcile</code> 对变化条目执行 <code>fiber.update()</code>（旧效果撤销 + 新配置重启）；config 无变化的条目是空操作。示例宿主 main.py 只有一行 <code>app.state.config_watcher = hmr.watch_config([BASE / "app.yml"])</code>。</p>
+  </div>
+
+  <h3>8.3 实验二：删掉一个插件</h3>
+  <p>注释掉 <code>app.yml</code> 的 quota 段并重启：限流消失；再注释 audit：日志里少审计行；metrics：带有效认证头请求 <code>/api/metrics</code> 变为 <b>404</b>（路由已随插件卸载移除；无认证头时仍是 gate 的 401）——但 tasks 照常工作（<code>bump</code> 判空）。<b>每一次删除都不需要改其他任何文件</b>。</p>
+
+  <h3>8.4 实验三：换成 JWT 认证</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">app.yml · 替换 auth 行</span><span class="lang">yaml</span><button class="copy">copy</button></div>
+    <pre><code><span class="l">  - id: auth</span>
+<span class="l">    url: plugins.jwt_auth:plugin        <span class="tok-c"># 原来是 plugins.auth:plugin</span></span>
+<span class="l">    config:</span>
+<span class="l">      secret: dev-secret-change-me</span>
+<span class="l">      issuer: task-api</span>
+<span class="l">      audience: task-api</span>
+<span class="l">      public_paths: [/api/health]</span></code></pre>
+  </div>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">terminal · 签发 token 并请求</span><span class="lang">bash</span><button class="copy">copy</button></div>
+    <pre><code><span class="l">python -c <span class="tok-s">"</span></span>
+<span class="l"><span class="tok-s">from plugins.jwt_auth import JwtAuthService</span></span>
+<span class="l"><span class="tok-s">print(JwtAuthService('dev-secret-change-me', 'task-api', 'task-api').issue('acme'))</span></span>
+<span class="l"><span class="tok-s">"</span></span>
+<span class="l"><span class="tok-c"># 得到 eyJ...（复制它）</span></span>
+<span class="l">curl -s -H "Authorization: Bearer eyJ..." http://127.0.0.1:8000/api/tasks</span>
+<span class="l"><span class="tok-c"># 200 —— 认证方式换了，业务、限流、隔离、审计零改动</span></span></code></pre>
+  </div>
+
+  <h3>8.5 实验四：新增一个插件（签名校验）</h3>
+  <p>仿照 quota：新建 <code>plugins/signature.py</code>，<code>ctx.on("http/request", ...)</code> 校验请求头签名，不通过 <code>return 401 JSONResponse</code>，通过 <code>next_()</code>；app.yml 加 4 行。<b>完事。</b>——不需要改 http、tasks 或 FastAPI 栈，因为在 cordis 里“请求中间件”就是“一个 listen 到 <code>http/request</code> 事件的插件”。</p>
+</section>
+
+<!-- ============================================================
+     09 测试
+============================================================ -->
+<section id="s9">
+  <h2><span class="no">§09</span>测试全解：每个测试在验什么</h2>
+  <div class="rule"></div>
+  <p class="lead">24 个测试 = 6 个集成（TestClient 全链路）+ 5 个 JWT + 4 个 SQLite 持久化 + 4 个失败监控 + 5 个版本契约。跑法：<code>cd examples/task_api &amp;&amp; pytest tests/ -q</code>（或仓库根 <code>pytest examples/task_api/tests -q</code>）。需要 pytest 环境：仓库根 <code>pip install -e ".[dev]"</code> 或 <code>pip install pytest pytest-asyncio</code>。</p>
+
+  <h3>9.1 test_app.py —— 集成测试（每个测试一个全新应用实例）</h3>
+  <div class="code-panel">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="fname">tests/test_app.py · fixture</span><span class="lang">python</span><button class="copy">copy</button></div>
+    <pre><code><span class="l"><span class="tok-k">@pytest.fixture</span></span>
+<span class="l"><span class="tok-k">def</span> <span class="tok-t">client</span>() -&gt; TestClient:</span>
+<span class="l">    <span class="tok-k">with</span> TestClient(make_app()) <span class="tok-k">as</span> test_client:</span>
+<span class="l">        <span class="tok-k">yield</span> test_client</span></code></pre>
+  </div>
+  <ul>
+    <li><code>TestClient(make_app())</code>：每次进入 with 触发 lifespan（装配/卸载），<b>测试间零共享状态</b>（每个用例的限流窗口、任务存储都是新的）。</li>
+    <li><code>make_app()</code> 默认 watch=False：不启动 watcher，测试稳定、无文件系统依赖。</li>
+  </ul>
+  <table class="tbl-wrap">
+    <thead><tr><th>测试</th><th>验证的契约</th><th>断言要点</th></tr></thead>
+    <tbody>
+      <tr><td><code>test_health</code></td><td>公开路径 + 中介者提供租户列表</td><td>200；<code>tenants == ["acme","globex"]</code></td></tr>
+      <tr><td><code>test_unauthorized</code></td><td>认证是请求链的守卫</td><td>无头 401；只有租户无 key 也 401</td></tr>
+      <tr><td><code>test_task_crud_and_tenant_isolation</code></td><td>CRUD + realm 物理隔离</td><td>201 且 id 前缀 <code>acme-</code>；acme count=1；globex count=0；不存在的 id 404；删除后 count=0</td></tr>
+      <tr><td><code>test_rate_limit</code></td><td>瀑布链拦截</td><td>前 5 次 200，第 6 次 429</td></tr>
+      <tr><td><code>test_metrics</code></td><td>埋点计数正确</td><td><code>taskapi.tasks.created == 1</code>、<code>taskapi.tasks.list == 1</code></td></tr>
+      <tr><td><code>test_reactive_dependency_registration</code></td><td><b>响应式装配</b>（本套件最核心）</td><td>tasks 在 http/tenant 之前装配，路由仍全部可用</td></tr>
+    </tbody>
+  </table>
+
+  <h3>9.2 test_jwt_auth.py —— 契约单元测试</h3>
+  <p>用 <code>SimpleNamespace</code> 伪造 Request（不启动应用），直接测 <code>JwtAuthService.authenticate</code> 的 5 个分支。这是“契约测试”的轻量做法：<b>不关心谁调用它，只关心接口行为</b>。</p>
+  <table class="tbl-wrap">
+    <thead><tr><th>测试</th><th>分支</th></tr></thead>
+    <tbody>
+      <tr><td><code>test_jwt_authenticate_success</code></td><td>签发→验证通过：返回 None 且 <code>state.tenant == "acme"</code></td></tr>
+      <tr><td><code>test_jwt_public_path_bypass</code></td><td>白名单路径免认证</td></tr>
+      <tr><td><code>test_jwt_missing_or_malformed</code></td><td>无 Authorization / 非 Bearer / 只有两段 → 401</td></tr>
+      <tr><td><code>test_jwt_bad_signature_and_expired</code></td><td>篡改签名 → 401；过期 token → 401</td></tr>
+      <tr><td><code>test_jwt_plugin_provides_auth_service</code></td><td>插件在 Context 中 provide <code>auth</code> 服务</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout why">
+    <div class="t">为什么 conftest.py 是空文件却必须存在？</div>
+    <p>pytest 的 rootdir/testpaths 从仓库根 <code>pyproject.toml</code> 读取（<code>testpaths=["tests"]</code>——那是<b>核心包</b>的 tests）。跑 example 的测试时，pytest 需要把 <code>examples/task_api</code> 加进 <code>sys.path</code> 才能 <code>from main import make_app</code>。空 conftest 放在该目录就是干这个的——<b>目录标记 + 路径挂钩</b>。</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     10 FAQ
+============================================================ -->
+<section id="s10">
+  <h2><span class="no">§10</span>FAQ：常见的 10 个疑问</h2>
+  <div class="rule"></div>
+  <details class="faq" open>
+    <summary>1. 这和 FastAPI 自带的依赖注入有什么区别？</summary>
+    <div class="a">FastAPI DI 解决的是<b>函数参数</b>级别的注入（路由依赖），且只能在 FastAPI 内部使用；cordis 解决的是<b>应用结构</b>级别的组合（插件、生命周期、装配、可逆、隔离），与框架无关——换 aiohttp/Flask 只改宿主，插件不动。两者不冲突：业务路由内的临时依赖用 FastAPI DI，系统能力的编排用 cordis。</div>
+  </details>
+  <details class="faq">
+    <summary>2. 为什么认证不进 FastAPI 中间件栈，而是放进 cordis 服务？</summary>
+    <div class="a">因为可替换性。FastAPI 中间件一旦 <code>add_middleware</code> 就写死在应用级（且启动后不可再加）；而 <code>auth</code> 是容器里的一个<b>名字</b>，换 JWT 只改配置。这是“功能作为资产”与“功能作为结构”的区别。</div>
+  </details>
+  <details class="faq">
+    <summary>3. 那个静态的 CordisGateMiddleware 为什么不直接写认证逻辑？</summary>
+    <div class="a">中间件是“电线”，装 / 拆 / 换都不该动它；认证是所有请求的<b>拦截点</b>但不是<b>固定逻辑</b>。静态装入口、插件注册逻辑，保证：插件全卸载时服务仍能直通、换实现不重装中间件、中间件结构不受 HMR 影响。</div>
+  </details>
+  <details class="faq">
+    <summary>4. 服务没有会怎样？所谓“软等待”是不是会挂住？</summary>
+    <div class="a">PENDING 的 fiber 不阻塞任何东西：<code>await fiber</code> 只等当前生命周期转换完成，不等“激活”。提供者出现前的等待是<b>惰性注册表状态</b>，不是线程/任务的挂起。这常被称为“声明式等待”：<code>@inject</code> 只是声明“我准备好时再叫我”。</div>
+  </details>
+  <details class="faq">
+    <summary>5. 插件之间的循环依赖会怎样？</summary>
+    <div class="a">A inject B、B inject A，且无外部触发器：都会 PENDING 等待，不会死锁、不会报错，只是互相等（可用 <code>fiber.unsatisfied</code> 诊断）。架构上应避免；必要时的解法是提供第三个“协调者”插件或把共享状态提升为无依赖服务。</div>
+  </details>
+  <details class="faq">
+    <summary>6. HMR 会不会把我的内存数据也“换成新实例”然后丢状态？</summary>
+    <div class="a">会——这是<b>设计意图</b>：插件闭包里的状态属于该插件实例，重载 = 新实例。若要跨重载保留（如计数器持久化、数据库连接池），状态要放到插件外的服务（如单独的 storage 服务）或外部存储里。这恰好逼着你把“状态归属”想清楚。</div>
+  </details>
+  <details class="faq">
+    <summary>7. 为什么没有用 pydantic 模型做 Config 校验？</summary>
+    <div class="a">示例刻意保持零第三方依赖。cordis_py 支持 <code>plugin.Config = 校验函数或 pydantic 模型</code>（依赖 <code>[pydantic]</code> extra），配置错误会在<b>装载期</b>报出而非运行期诡异行为。生产可加。</div>
+  </details>
+  <details class="faq">
+    <summary>8. 这个 example 的最小可删项是什么？</summary>
+    <div class="a">所有插件都是可选项：logger 没了 → 其他插件的 <code>ctx.get("log")</code> 返回 None（判空即可）；auth 没了 → 请求直通、无租户绑定（quota 也相应跳过）；metrics 没了 → 埋点消失。唯一不可删的是 <code>http</code>（没有 routes 就没有路由）和 <code>tenant</code>（business 依赖 tenant，除非把 store 改回全局单例）。</div>
+  </details>
+  <details class="faq">
+    <summary>9. 写一个插件的最小模板？</summary>
+    <div class="a"><code>def plugin(ctx, config): ...</code> 提供用 <code>ctx.provide</code>、消费用 <code>@inject</code>（硬）/ <code>ctx.get</code>（可选）、监听用 <code>ctx.on</code>、可逆用 <code>ctx.effect(lambda: undo)</code>。然后 app.yml 加三行。没有基类、没有注册器、没有 import 其他插件——这就是 cordis 插件的样子。</div>
+  </details>
+  <details class="faq">
+    <summary>10. 如果直接跑 <code>python main.py</code> 报 ImportError？</summary>
+    <div class="a">三步检查：① 确保 cordis_py 已安装（仓库根 <code>pip install -e .</code>，<code>yaml</code>/<code>watch</code> extras 也要装，否则 app.yml 解析和 HMR 会报缺 PyYAML / watchdog）；② <code>pip install -r requirements.txt</code>（fastapi/uvicorn/httpx/watchdog）；③ 在 <code>examples/task_api/</code> 目录内运行——<code>from plugins.http_service import ...</code> 是相对示例目录的导入，Python 运行脚本时会把脚本所在目录放进 <code>sys.path</code>，在其他目录执行 main.py 就会找不到 <code>plugins</code>（可以设 <code>PYTHONPATH</code> 解决，但推荐按目录运行）。</div>
+  </details>
+
+  <div class="colophon">
+    <span>cordis_py v0.9.1 · examples/task_api · 文档为本地说明，不随发布物分发</span>
+    <a href="https://github.com/xiwen-haochi/cordis_py">github.com/xiwen-haochi/cordis_py</a>
+  </div>
+</section>
+
+<!-- ============================================================
+     JS：TOC 高亮 + 拷贝按钮 + 进度条
+============================================================ -->
+<script>
+(function () {
+  "use strict";
+
+  /* ---- TOC 移动端开合 ---- */
+  var toc = document.getElementById("toc");
+  if (toc) {
+    var head = toc.querySelector(".toc-head");
+    if (head) head.addEventListener("click", function () { toc.classList.toggle("open"); });
+  }
+
+  /* ---- 拷贝按钮 ---- */
+  document.querySelectorAll(".code-panel .copy").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var panel = btn.closest(".code-panel");
+      var text = panel ? panel.querySelector("code").innerText : "";
+      function ok() {
+        btn.textContent = "copied ✓";
+        setTimeout(function () { btn.textContent = "copy"; }, 1200);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok, function () { fallback(); });
+      } else { fallback(); }
+      function fallback() {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); ok(); } catch (e) { btn.textContent = "failed"; }
+        document.body.removeChild(ta);
+      }
+    });
+  });
+
+  /* ---- 阅读进度条 ---- */
+  var bar = document.getElementById("progress");
+  function onScroll() {
+    if (!bar) return;
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + "%";
+  }
+  document.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+
+  /* ---- TOC 滚动高亮 ---- */
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav.toc a[href^="#"]'));
+  var map = {};
+  links.forEach(function (a) {
+    var id = a.getAttribute("href").slice(1);
+    var sec = document.getElementById(id);
+    if (sec) map[id] = a;
+  });
+  var done = false;
+  function onSpy() {
+    if (done) return;
+    var pos = (window.innerHeight || 800) * 0.35;
+    var current = null;
+    Object.keys(map).forEach(function (id) {
+      var sec = document.getElementById(id);
+      if (sec && sec.getBoundingClientRect().top <= pos) current = id;
+    });
+    links.forEach(function (a) { a.classList.remove("on"); });
+    if (current && map[current]) map[current].classList.add("on");
+  }
+  document.addEventListener("scroll", onSpy, { passive: true });
+  document.addEventListener("load", onSpy);
+  onSpy();
+})();
+</script>
+</main>
+</div>
+</body>
+</html>

@@ -21,13 +21,30 @@ from fastapi.responses import JSONResponse
 from cordis_py import Context, inject
 
 
+class TagsService:
+    """标签服务契约：``add(task_id, tag)`` / ``list(task_id) -> list[str]``。
+
+    以服务形式提供（带版本号），消费者可经 ``@require("tags", ">=1.0")``
+    声明约束——换实现（如 SQLite 后端）只需换插件、契约不变。
+    """
+
+    def __init__(self) -> None:
+        self._tags: dict[str, list[str]] = {}
+
+    def add(self, task_id: str, tag: str) -> None:
+        self._tags.setdefault(task_id, []).append(tag)
+
+    def list(self, task_id: str) -> list[str]:
+        return list(self._tags.get(task_id, []))
+
+
 @inject(["routes", "tenants"])
 def plugin(ctx: Context, config: dict[str, Any]) -> None:
     routes = ctx.routes
     tenants = ctx.tenants
     logger = ctx.get("log")
     # 标签数据：{task_id: [tag, ...]}（内存后端；契约与存储插件相同，可替换持久化）。
-    tags: dict[str, list[str]] = {}
+    service = TagsService()
 
     def task_exists(task_id: str, request: Request) -> bool:
         store = tenants.store(request.state.tenant)
@@ -43,15 +60,15 @@ def plugin(ctx: Context, config: dict[str, Any]) -> None:
         tag = str(payload.get("tag") or "").strip()
         if not tag:
             return JSONResponse({"error": "tag_required"}, status_code=422)
-        tags.setdefault(task_id, []).append(tag)
+        service.add(task_id, tag)
         if logger is not None:
             logger("tags").info("tagged task=%s tag=%s tenant=%s", task_id, tag, request.state.tenant)
-        return JSONResponse({"task_id": task_id, "tags": tags[task_id]}, status_code=201)
+        return JSONResponse({"task_id": task_id, "tags": service.list(task_id)}, status_code=201)
 
     async def list_tags(request: Request, task_id: str) -> Response:
         if not task_exists(task_id, request):
             return not_found(task_id)
-        return JSONResponse({"task_id": task_id, "tags": tags.get(task_id, [])})
+        return JSONResponse({"task_id": task_id, "tags": service.list(task_id)})
 
     # 注册路由并登记可逆 disposer（HMR 重载时整体替换）。
     undos = [
@@ -64,3 +81,5 @@ def plugin(ctx: Context, config: dict[str, Any]) -> None:
             undo()
 
     ctx.effect(lambda: undo_all)
+    # 提供带版本的标签服务：消费方可经 @require 声明版本/接口约束（见 tests）。
+    ctx.provide("tags", service, version="1.0")

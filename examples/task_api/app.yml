@@ -54,6 +54,9 @@ plugins:
   - id: tags
     url: plugins.tags:plugin
 
+  - id: tag_stats
+    url: plugins.tag_stats:plugin
+
   - id: failures
     url: plugins.failure_monitor:plugin
     config:

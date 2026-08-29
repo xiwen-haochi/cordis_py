@@ -33,7 +33,7 @@ plugins:
       keys:
         acme: key-acme
         globex: key-globex
-      public_paths: [/api/health]
+      public_paths: [/api/health, /docs, /redoc, /openapi.json]
 
   - id: quota
     url: plugins.quota:plugin
@@ -50,6 +50,14 @@ plugins:
     url: plugins.metrics:plugin
     config:
       namespace: taskapi
+
+  - id: tags
+    url: plugins.tags:plugin
+
+  - id: failures
+    url: plugins.failure_monitor:plugin
+    config:
+      path: err.log
 
   - id: health
     url: plugins.health:plugin

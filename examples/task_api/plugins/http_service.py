@@ -59,16 +59,23 @@ class RouteRegistry:
         old = self._routes.get(key)
         if old is not None and old in self._app.routes:
             self._app.routes.remove(old)
-        route = self._app.add_api_route(
+        # 注意：FastAPI 的 add_api_route 返回 None（不是 APIRoute），
+        # 实际对象追加在 app.routes 末尾 —— 据此捕获真实路由对象，
+        # 否则 undo 的 "route in self._app.routes" 恒为 False（僵尸路由）。
+        self._app.add_api_route(
             path, handler, methods=[method.upper()], name=name or handler.__name__
         )
+        route = self._app.routes[-1]
         self._routes[key] = route
+        # FastAPI 缓存 openapi schema：注册/卸载后失效它，文档页才反映最新路由。
+        self._app.openapi_schema = None
 
         def undo() -> None:
             if self._routes.get(key) is route:
                 self._routes.pop(key, None)
                 if route in self._app.routes:
                     self._app.routes.remove(route)
+                self._app.openapi_schema = None
 
         return undo
 

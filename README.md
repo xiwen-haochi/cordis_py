@@ -129,7 +129,7 @@ asyncio.run(main())
 传统同规模 FastAPI 应用的主程序通常是：路由、中间件、依赖、配置、生命周期混在一个文件里。
 example 的目的不是“演示功能”，而是展示**组织方式**：
 
-- **每个关注点是一个插件**：HTTP 装配、认证、限流、审计、指标、业务、租户、健康检查、持久化是 9 个正交能力，各自一个文件 + 一份配置——增删能力不动其他文件；
+- **每个关注点是一个插件**：HTTP 装配、认证、限流、审计、指标、业务、租户、健康检查、持久化、标签、失败监控是 11 个正交能力，各自一个文件 + 一份配置——增删能力不动其他文件；
 - **配置即架构图**：`app.yml` 列出全部插件与其参数，读者不看 import 就能画出系统；
 - **装配顺序刻意“错误”**：业务插件 `tasks` 排在 `http` / `tenant` 之前——证明依赖响应式（提供者后出现也能自动激活）；
 - **宿主只做两件事**：创建应用对象（注入 `fastapi_app`）与加载配置——核心包零 Web 依赖，换框架只换宿主层；
@@ -140,7 +140,7 @@ example 的目的不是“演示功能”，而是展示**组织方式**：
 ```text
 examples/task_api/
 ├── main.py                  # 宿主：约 40 行（创建 FastAPI、注入、装配、可选 HMR + 配置热更）
-├── app.yml                  # 声明式装配：10 个插件
+├── app.yml                  # 声明式装配：12 个插件
 ├── plugins/
 │   ├── logger_plugin.py     # log 服务（日志工厂）
 │   ├── http_service.py      # gate 中间件 + 瀑布链 + 路由注册表
@@ -151,9 +151,11 @@ examples/task_api/
 │   ├── quota.py             # 限流（瀑布链短路径）
 │   ├── audit.py             # 审计日志（事件监听）
 │   ├── metrics.py           # 指标计数 + /api/metrics
+│   ├── tags.py              # 任务标签（新增能力示例：新插件 + 新接口，见 §7.1）
+│   ├── failure_monitor.py   # 失败监控：4xx/5xx/异常 → err.log（瀑布链监听）
 │   ├── tasks.py             # 业务 CRUD（emit 事件 + 指标埋点）
 │   └── health.py            # 健康检查
-└── tests/                   # 15 个集成/单元测试（含 JWT 契约、SQLite 持久化）
+└── tests/                   # 19 个集成/单元测试（含 JWT 契约、SQLite 持久化、失败监控）
 ```
 
 ### 4.3 宿主：应用与插件唯一的接缝（main.py）
@@ -213,6 +215,8 @@ ctx.effect(lambda: undo_all)            # dispose 时逐一撤销
 | `auth`    | X-Tenant / X-API-Key → `request.state.tenant`              | `keys: {tenant: key}`、`public_paths`     | 失败 401；**契约接口可被 jwt_auth 替换** |
 | `quota`   | 固定窗口限流（瀑布短路径 429）                             | `limit`（默认 5）、`window` 秒（默认 30） | 公开路径不限流                           |
 | `tasks`   | 任务 CRUD + 事件 + 指标                                    | `page_size`（默认 20）                    | 装配顺序无关（响应式）                   |
+| `tags`    | 任务标签（新增能力示例：新插件 + 新接口）                  | —                                         | `POST/GET /api/tasks/{id}/tags`，内存后端可换 |
+| `failures`| 失败监控：4xx/5xx/异常 → err.log                            | `path`（默认 err.log）                    | 瀑布链监听，卸载/重载自动移除；401 属 gate 前置层不记录 |
 | `audit`   | 任务事件审计日志                                           | `event_prefix`                            | 监听器随 fiber 回收                      |
 | `metrics` | 计数服务 + `/api/metrics`                                  | `namespace`（默认 cordis）                | 键如 `taskapi.tasks.created`             |
 | `health`  | 公开健康检查                                               | —                                         | 返回状态与租户列表                       |
@@ -229,7 +233,7 @@ cd examples/task_api
 pip install -r requirements.txt     # fastapi / uvicorn / httpx / watchdog
 pip install -e "..[yaml,watch]"     # 或 pip install "cordis-python[yaml,watch]"
 python main.py --port 8000          # 启动即启用 HMR + 配置热更（默认开启）
-pytest tests/ -q                    # 15 个测试（测试用独立临时 SQLite 库，不影响开发库）
+pytest tests/ -q                    # 19 个测试（测试用独立临时 SQLite 库，不影响开发库）
 ```
 
 ```bash
@@ -377,7 +381,7 @@ pytest examples/task_api/tests/test_jwt_auth.py -q   # 成功/缺失/篡改/过�
 
 ## 9. 质量与边界
 
-- **验证**：111 个核心单元/集成测试 + 案例 15 个测试（含 JWT 契约、SQLite 持久化、watcher 原子保存、配置热更、Bridge 协议、HMR 依赖图）；ruff 全绿；`py.typed` 随包发布。
+- **验证**：111 个核心单元/集成测试 + 案例 19 个测试（含 JWT 契约、SQLite 持久化、失败监控、watcher 原子保存、配置热更、Bridge 协议、HMR 依赖图）；ruff 全绿；`py.typed` 随包发布。
 - **可选依赖**：PyYAML / watch / pydantic 均为 extra，核心零第三方运行时依赖（仅 `packaging` 用于版本约束）。
 - **诚实边界**：作用域隔离是协调式（事件/服务可见性），**不是**恶意代码的安全边界（OS 级沙箱属宿主职责）；Bridge 无认证/加密层，限受信内网；跨进程调用仅 JSON 兼容值；HMR 仅纯 Python 源码模块。
 - **版本**：`0.9.2`；0.x 阶段 API 按语义化演进，1.0 前事项：对外契约类型化（mypy）、CI、并发不变量压测。

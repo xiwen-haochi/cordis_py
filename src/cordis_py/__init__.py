@@ -29,7 +29,7 @@ from .registry import RegistryService
 from .scope import Scope, bind_scope_parent, create_scope, scope_of, scope_target
 from .service import Service, inject, require
 from .utils import Disposable, Effect, Inject, deep_merge
-from .watcher import HMRWatcher
+from .watcher import ConfigWatcher, HMRWatcher
 
 __all__ = [
     "HMR",
@@ -37,6 +37,7 @@ __all__ = [
     "Bridge",
     "Classification",
     "ConfigValidationError",
+    "ConfigWatcher",
     "Context",
     "CordisError",
     "DispatchMode",
@@ -75,4 +76,4 @@ __all__ = [
     "scope_target",
 ]
 
-__version__ = "0.9.1"
+__version__ = "0.9.2"

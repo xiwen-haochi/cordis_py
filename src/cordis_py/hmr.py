@@ -149,6 +149,58 @@ class HMR:
         }
         return await self._reload(changed)
 
+    # ------------------------------------------------------------------
+    # 配置文件热更（与源码 HMR 并列的第二种“开发期热更新”）
+    # ------------------------------------------------------------------
+
+    async def reload_config(self, path: str | Path) -> list[str]:
+        """重新读取配置文件并增量协调（配置热更，进程不重启）。
+
+        经 :meth:`Loader.include` → ``reconcile``：仅 config 发生变化的条目
+        执行 ``fiber.update()``（撤销旧效果、按新配置重启）；条目增删、
+        启停（disabled）变化同样被协调。
+
+        :return: config 或 disabled 状态发生变化的条目 id 列表（增量，无变化为 []）。
+        """
+        if self._disposed:
+            raise RuntimeError("HMR has been disposed")
+        before = {
+            eid: (dict(entry.config), entry.disabled)
+            for eid, entry in self.loader.entries.items()
+        }
+        await self.loader.include(path)
+        after = {
+            eid: (dict(entry.config), entry.disabled)
+            for eid, entry in self.loader.entries.items()
+        }
+        return [eid for eid in after if before.get(eid) != after[eid]]
+
+    def watch_config(
+        self,
+        targets: Sequence[str | Path],
+        *,
+        debounce: float = 0.1,
+        backend: Any | None = None,
+        on_error: Callable[[str, Exception], None] | None = None,
+    ) -> Any:
+        """启动配置文件监听，把配置文件变更自动接入 :meth:`reload_config`。
+
+        *targets* 为配置文件路径列表（监听其父目录、按精确路径过滤）。
+        需要运行中的事件循环；未安装 watchdog 时抛出带安装提示的 ImportError。
+
+        与 :meth:`watch` 的分工：``watch`` 重载 ``.py`` 源码模块；本方法走
+        Loader 的增量协调（``fiber.update()``），适合 app.yml 这类装配配置。
+        """
+        from .watcher import ConfigWatcher
+
+        return ConfigWatcher(
+            self,
+            targets=targets,
+            debounce=debounce,
+            backend=backend,
+            on_error=on_error,
+        ).start()
+
     def dispose(self) -> None:
         """卸载模块图追踪器（幂等）。"""
         if self._disposed:

@@ -236,28 +236,34 @@ curl -s -H "X-Tenant: globex" -H "X-API-Key: key-globex" \
 
 ---
 
-## 5. 场景 B：开发期热更新（HMR）
+## 5. 场景 B：开发期热更新（HMR + 配置热更）
 
-**目的**：改插件源码不重启进程。依赖图分类保证“只重载受影响的条目”，事务回滚保证失败不破坏运行状态。
+**目的**：改插件源码或装配配置不重启进程。依赖图分类保证“只重载受影响的条目”，事务回滚保证失败不破坏运行状态。配置热更走 Loader 增量协调（`fiber.update()`），与源码 HMR 并列。
 
 ```python
 from cordis_py import HMR
 
 hmr = HMR(loader)                          # 安装模块依赖图追踪（运行时导入边 + 已加载模块 AST 补全）
-watcher = hmr.watch(["src/plugins"])       # 监听源码目录（需要 cordis-python[watch]）
+watcher = hmr.watch(["src/plugins"])       # 源码热替换（需要 cordis-python[watch]）
 # watcher 参数：ignored（默认忽略 .*/__pycache__/node_modules/.venv/cache/data）、
 #              debounce（秒，默认 0.1，合并连续保存）、recursive、on_error(path, exc)
+config_watcher = hmr.watch_config(["app.yml"])  # 配置热更：改装配配置不重启
+# watch_config 参数：targets（必须，配置文件路径）、debounce、backend、on_error
 
-await hmr.reload_file("src/plugins/worker.py")   # 手动触发：返回受影响条目 id 列表
+await hmr.reload_file("src/plugins/worker.py")   # 手动触发源码重载：返回受影响条目 id 列表
 await hmr.reload_module("myapp.helpers")         # 或按模块名
 await hmr.reload_entry("worker")                 # 或按条目 id（连带重载其依赖者）
+await hmr.reload_config("app.yml")               # 手动触发配置重读：返回 config 变化的条目 id
 print(hmr.affected({"myapp.helpers"}))           # 只预测不执行
 
 await watcher.stop()
+await config_watcher.stop()
 hmr.dispose()                                    # 卸载追踪器（幂等）
 ```
 
 **验证热替换**：修改 `src/plugins/worker.py` 保存后 1.5 秒内新逻辑生效；限流窗口、计数器等插件内部状态归零 = 旧实例已被完整替换。支持编辑器原子保存（临时文件 + rename，watcher 视为新建）。
+
+**验证配置热更**：修改 `app.yml` 里某插件的 config 保存后，仅该条目被 `fiber.update()`（撤销旧效果、按新配置重启），其余插件不动；config 无变化的条目是空操作。注意：配置在启动时被 Loader 读入一次并定格在内存 `entry.config`，因此“改代码默认值”不是配置热更的生效路径——要么改配置（`reload_config`），要么改代码（`reload_file`），两条路径互不替代。
 
 **机制**：变更模块按依赖图分类 accepted/declined（对齐 Node `analyzeChanges`）→ 重载集 = 变更模块 + 受影响条目模块（拓扑序，依赖先于导入者）→ 快照插件与模块命名空间 → 失败恢复快照并用旧插件重新应用（回滚）。仅纯 Python 源码模块；`__main__` / cordis_py 自身变更视为全量重启（不在范围）。
 
@@ -361,10 +367,10 @@ pytest examples/task_api/tests/test_jwt_auth.py -q   # 成功/缺失/篡改/过�
 
 ## 9. 质量与边界
 
-- **验证**：103 个核心单元/集成测试 + 案例 11 个测试（含 JWT 契约、watcher 原子保存、Bridge 协议、HMR 依赖图）；ruff 全绿；`py.typed` 随包发布。
+- **验证**：111 个核心单元/集成测试 + 案例 11 个测试（含 JWT 契约、watcher 原子保存、配置热更、Bridge 协议、HMR 依赖图）；ruff 全绿；`py.typed` 随包发布。
 - **可选依赖**：PyYAML / watch / pydantic 均为 extra，核心零第三方运行时依赖（仅 `packaging` 用于版本约束）。
 - **诚实边界**：作用域隔离是协调式（事件/服务可见性），**不是**恶意代码的安全边界（OS 级沙箱属宿主职责）；Bridge 无认证/加密层，限受信内网；跨进程调用仅 JSON 兼容值；HMR 仅纯 Python 源码模块。
-- **版本**：`0.9.0`；0.x 阶段 API 按语义化演进，1.0 前事项：对外契约类型化（mypy）、CI、并发不变量压测。
+- **版本**：`0.9.2`；0.x 阶段 API 按语义化演进，1.0 前事项：对外契约类型化（mypy）、CI、并发不变量压测。
 
 ## 参考
 

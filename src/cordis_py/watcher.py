@@ -14,7 +14,7 @@ from .errors import AsyncRequiredError
 from .hmr import HMR
 from .utils import has_running_loop
 
-__all__ = ["HMRWatcher"]
+__all__ = ["ConfigWatcher", "HMRWatcher"]
 
 DEFAULT_IGNORED = ("**/.*", "**/__pycache__", "**/node_modules", "**/.venv", "cache", "data")
 
@@ -172,3 +172,107 @@ def _watchdog_backend(roots: Sequence[str], recursive: bool, notify: Callable[..
     for root in roots:
         observer.schedule(handler, root, recursive=recursive)
     return observer
+
+
+class ConfigWatcher:
+    """配置文件监听器：把配置文件变更接入 :meth:`HMR.reload_config`。
+
+    与 :class:`HMRWatcher` 的分工：
+
+    - ``HMRWatcher``（``hmr.watch``）重载 ``.py`` 源码模块（模块级热替换）；
+    - ``ConfigWatcher``（``hmr.watch_config``）监听装配配置文件（app.yml /
+      app.json / app.toml），变更后经 Loader 的增量协调（``fiber.update()``）
+      更新对应条目的 config，无需重启进程。
+
+    事件管线与 HMRWatcher 一致：观察后端线程回调 → ``notify()``（线程安全）
+    → 桥接回事件循环 → 按精确路径过滤 → debounce 合并 → ``reload_config``。
+    过滤规则：只接受“目标配置文件路径完全一致”的 changed/created 事件；
+    moved（原子保存）以目标路径视为 created。
+    """
+
+    def __init__(
+        self,
+        hmr: HMR,
+        *,
+        targets: Sequence[str | Path],
+        debounce: float = 0.1,
+        backend: Backend | None = None,
+        on_error: Callable[[str, Exception], None] | None = None,
+    ) -> None:
+        if not targets:
+            raise ValueError("ConfigWatcher requires at least one target file")
+        self.hmr = hmr
+        self.targets = {str(Path(t).expanduser().resolve()) for t in targets}
+        self.debounce = debounce
+        self._backend = backend
+        self._on_error = on_error or _default_on_error
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._pending: set[str] = set()
+        self._task: asyncio.Task[None] | None = None
+        self._stopped = True
+
+    @property
+    def running(self) -> bool:
+        """观察器是否正在运行。"""
+        return not self._stopped
+
+    def start(self) -> ConfigWatcher:
+        """启动观察（需要运行中的事件循环）。"""
+        if not has_running_loop():
+            raise AsyncRequiredError("配置文件的监听启动")
+        self._loop = asyncio.get_running_loop()
+        if self._backend is None:
+            roots = sorted({str(Path(t).parent) for t in self.targets})
+            self._backend = _watchdog_backend(roots, recursive=False, notify=self.notify)
+        self._stopped = False
+        self._backend.start()
+        return self
+
+    def notify(self, kind: str, path: str) -> None:
+        """线程安全的事件入口：由观察后端回调。"""
+        if self._stopped or self._loop is None:
+            return
+        self._loop.call_soon_threadsafe(self._accept, kind, path)
+
+    def _accept(self, kind: str, path: str) -> None:
+        """主线程侧过滤：只接受目标配置文件的 changed/created 事件。"""
+        if self._stopped:
+            return
+        if kind not in ("changed", "created"):
+            return
+        if str(Path(path).resolve()) not in self.targets:
+            return
+        self._pending.add(path)
+        if self._task is None:
+            self._task = self._loop.create_task(self._drain())
+
+    async def _drain(self) -> None:
+        """debounce 窗口后处理所有 pending 路径（失败不中断观察）。"""
+        try:
+            await asyncio.sleep(self.debounce)
+            while self._pending and not self._stopped:
+                pending = sorted(self._pending)
+                self._pending.clear()
+                for path in pending:
+                    try:
+                        await self.hmr.reload_config(path)
+                    except Exception as error:  # noqa: BLE001 - 失败后继续观察
+                        self._on_error(path, error)
+        finally:
+            self._task = None
+
+    async def stop(self) -> None:
+        """停止观察并取消在途刷新任务。"""
+        if self._stopped:
+            return
+        self._stopped = True
+        try:
+            self._backend.stop()
+        finally:
+            if self._task is not None:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+                self._task = None

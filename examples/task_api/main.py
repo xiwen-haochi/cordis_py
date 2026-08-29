@@ -18,7 +18,7 @@ from cordis_py import HMR, Context, Loader
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动：宿主注入应用对象 → Loader 声明式装配 → 可选 HMR 监听。"""
+    """启动：宿主注入应用对象 → Loader 声明式装配 → 可选 HMR / 配置热更。"""
     root = Context()
     # 运行时对象（FastAPI 应用）由宿主注入，不进配置文件。
     root.provide("fastapi_app", app)
@@ -30,10 +30,13 @@ async def lifespan(app: FastAPI):
     if getattr(app.state, "watch", False):
         hmr = HMR(loader)
         app.state.hmr_watcher = hmr.watch([str(BASE / "plugins")])
+        # 配置文件热更（改 app.yml 不重启）：监听 + Loader 增量协调。
+        app.state.config_watcher = hmr.watch_config([BASE / "app.yml"])
 
     yield
     # 退出：可逆效果按 LIFO 全部回收（服务、路由、监听器、模块追踪器）。
     if hmr is not None:
+        await app.state.config_watcher.stop()
         await app.state.hmr_watcher.stop()
         hmr.dispose()
     await loader.dispose()
@@ -41,7 +44,7 @@ async def lifespan(app: FastAPI):
 
 
 def make_app(watch: bool = False) -> FastAPI:
-    """创建应用；*watch* 为 True 时启用插件源码热替换。"""
+    """创建应用；*watch* 为 True 时启用插件源码热替换与配置热更。"""
     app = FastAPI(title="Cordis Task API", version="0.1.0", lifespan=lifespan)
     # 静态安装中间件入口（不随插件装载变动），链路逻辑由 http 插件注册。
     from plugins.http_service import CordisGateMiddleware

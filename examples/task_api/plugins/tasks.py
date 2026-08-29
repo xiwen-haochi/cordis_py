@@ -28,8 +28,11 @@ def plugin(ctx: Context, config: dict[str, Any]) -> None:
         if metrics is not None:
             metrics.bump(name)
 
+    # 每次请求经服务解析当前 registry：配置热更/源码热替换后拿到最新实现
+    # （插件激活时固化的引用会滞后于热更，见 store_for 注释）。
     def store_for(request: Request) -> Any:
-        store = registry.store(request.state.tenant)
+        current = ctx.get("tenants")
+        store = (current or registry).store(request.state.tenant)
         return store
 
     async def list_tasks(request: Request) -> Response:

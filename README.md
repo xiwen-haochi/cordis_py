@@ -129,7 +129,7 @@ asyncio.run(main())
 传统同规模 FastAPI 应用的主程序通常是：路由、中间件、依赖、配置、生命周期混在一个文件里。
 example 的目的不是“演示功能”，而是展示**组织方式**：
 
-- **每个关注点是一个插件**：HTTP 装配、认证、限流、审计、指标、业务、租户、健康检查是 8 个正交能力，各自一个文件 + 一份配置——增删能力不动其他文件；
+- **每个关注点是一个插件**：HTTP 装配、认证、限流、审计、指标、业务、租户、健康检查、持久化是 9 个正交能力，各自一个文件 + 一份配置——增删能力不动其他文件；
 - **配置即架构图**：`app.yml` 列出全部插件与其参数，读者不看 import 就能画出系统；
 - **装配顺序刻意“错误”**：业务插件 `tasks` 排在 `http` / `tenant` 之前——证明依赖响应式（提供者后出现也能自动激活）；
 - **宿主只做两件事**：创建应用对象（注入 `fastapi_app`）与加载配置——核心包零 Web 依赖，换框架只换宿主层；
@@ -139,12 +139,13 @@ example 的目的不是“演示功能”，而是展示**组织方式**：
 
 ```text
 examples/task_api/
-├── main.py                  # 宿主：约 40 行（创建 FastAPI、注入、装配、可选 HMR）
-├── app.yml                  # 声明式装配：9 个插件
+├── main.py                  # 宿主：约 40 行（创建 FastAPI、注入、装配、可选 HMR + 配置热更）
+├── app.yml                  # 声明式装配：10 个插件
 ├── plugins/
 │   ├── logger_plugin.py     # log 服务（日志工厂）
 │   ├── http_service.py      # gate 中间件 + 瀑布链 + 路由注册表
-│   ├── tenant.py            # 租户 realm 隔离 + TaskStore
+│   ├── sqlite_store.py      # sqlite 服务：任务持久化（重启不丢失，可选，未装配回退内存）
+│   ├── tenant.py            # 租户 realm 隔离 + TaskStore（动态选择 sqlite/内存后端）
 │   ├── auth.py              # API Key 认证（契约：authenticate(request)）
 │   ├── jwt_auth.py          # ← JWT 认证（同契约替代实现，见 §7）
 │   ├── quota.py             # 限流（瀑布链短路径）
@@ -152,7 +153,7 @@ examples/task_api/
 │   ├── metrics.py           # 指标计数 + /api/metrics
 │   ├── tasks.py             # 业务 CRUD（emit 事件 + 指标埋点）
 │   └── health.py            # 健康检查
-└── tests/                   # 11 个集成/单元测试（含 JWT 契约）
+└── tests/                   # 15 个集成/单元测试（含 JWT 契约、SQLite 持久化）
 ```
 
 ### 4.3 宿主：应用与插件唯一的接缝（main.py）
@@ -207,7 +208,8 @@ ctx.effect(lambda: undo_all)            # dispose 时逐一撤销
 | --------- | ---------------------------------------------------------- | ----------------------------------------- | ---------------------------------------- |
 | `logger`  | 提供 `log` 服务（logging 工厂）                            | `level`（默认 INFO）                      | 其他插件 `ctx.get("log")("name")`        |
 | `http`    | 装配：gate 中间件、`routes` 注册表、`app` 服务             | `title`                                   | 宿主注入 `fastapi_app`                   |
-| `tenant`  | 每租户 `isolate` + 专属存储；`tenants` 服务（version=1.0） | `tenants: [acme, globex]`                 | realm 服务查找                           |
+| `sqlite`  | 提供 `sqlite` 服务：任务持久化落盘（重启不丢失）           | `path`（缺省 = 示例目录 `tasks.db`）      | **可选服务**：tenant 动态选择，未装配回退内存 |
+| `tenant`  | 每租户 `isolate` + 专属存储；`tenants` 服务（version=1.0） | `tenants: [acme, globex]`                 | 存储后端随装配动态解析（sqlite / 内存）  |
 | `auth`    | X-Tenant / X-API-Key → `request.state.tenant`              | `keys: {tenant: key}`、`public_paths`     | 失败 401；**契约接口可被 jwt_auth 替换** |
 | `quota`   | 固定窗口限流（瀑布短路径 429）                             | `limit`（默认 5）、`window` 秒（默认 30） | 公开路径不限流                           |
 | `tasks`   | 任务 CRUD + 事件 + 指标                                    | `page_size`（默认 20）                    | 装配顺序无关（响应式）                   |
@@ -215,13 +217,19 @@ ctx.effect(lambda: undo_all)            # dispose 时逐一撤销
 | `metrics` | 计数服务 + `/api/metrics`                                  | `namespace`（默认 cordis）                | 键如 `taskapi.tasks.created`             |
 | `health`  | 公开健康检查                                               | —                                         | 返回状态与租户列表                       |
 
+**SQLite 持久化（可选能力）**：默认装配时任务写入 `tasks.db`（标准库 `sqlite3`，零依赖），
+重启服务数据保留；从 `app.yml` 删掉（或 `disabled: true`）sqlite 插件段即可**热卸载**——tenant 在
+下一次访问时自动回退内存 TaskStore，业务零改动；数据文件保留，重新装配即恢复。这是 Cordis
+“一切可逆 + 可选服务”的直接体现。
+
 ### 4.6 运行与验证
 
 ```bash
 cd examples/task_api
 pip install -r requirements.txt     # fastapi / uvicorn / httpx / watchdog
-python main.py --port 8000          # 启动即启用 HMR（默认开启）
-pytest tests/ -q                    # 11 个测试
+pip install -e "..[yaml,watch]"     # 或 pip install "cordis-python[yaml,watch]"
+python main.py --port 8000          # 启动即启用 HMR + 配置热更（默认开启）
+pytest tests/ -q                    # 15 个测试（测试用独立临时 SQLite 库，不影响开发库）
 ```
 
 ```bash
@@ -232,6 +240,8 @@ curl -s -X POST -H "X-Tenant: acme" -H "X-API-Key: key-acme" \
 curl -s -H "X-Tenant: globex" -H "X-API-Key: key-globex" \
      http://127.0.0.1:8000/api/tasks                                          # globex：空（隔离）
 # 连续第 6 次请求 → 429 rate_limited；/api/metrics 查看计数
+# 任务持久化在示例目录的 tasks.db（标准库 sqlite3，零依赖）：重启服务数据保留；
+# 删除 app.yml 的 sqlite 插件段即热卸载（connector 关闭、tenant 回退内存、文件保留可重装）
 ```
 
 ---
@@ -367,7 +377,7 @@ pytest examples/task_api/tests/test_jwt_auth.py -q   # 成功/缺失/篡改/过�
 
 ## 9. 质量与边界
 
-- **验证**：111 个核心单元/集成测试 + 案例 11 个测试（含 JWT 契约、watcher 原子保存、配置热更、Bridge 协议、HMR 依赖图）；ruff 全绿；`py.typed` 随包发布。
+- **验证**：111 个核心单元/集成测试 + 案例 15 个测试（含 JWT 契约、SQLite 持久化、watcher 原子保存、配置热更、Bridge 协议、HMR 依赖图）；ruff 全绿；`py.typed` 随包发布。
 - **可选依赖**：PyYAML / watch / pydantic 均为 extra，核心零第三方运行时依赖（仅 `packaging` 用于版本约束）。
 - **诚实边界**：作用域隔离是协调式（事件/服务可见性），**不是**恶意代码的安全边界（OS 级沙箱属宿主职责）；Bridge 无认证/加密层，限受信内网；跨进程调用仅 JSON 兼容值；HMR 仅纯 Python 源码模块。
 - **版本**：`0.9.2`；0.x 阶段 API 按语义化演进，1.0 前事项：对外契约类型化（mypy）、CI、并发不变量压测。

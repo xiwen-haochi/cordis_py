@@ -11,6 +11,12 @@ plugins:
     config:
       page_size: 20
 
+  - id: sqlite
+    url: plugins.sqlite_store:plugin
+    # config:
+    #   path: tasks.db        # 缺省 = 示例目录下 tasks.db（插件按自身位置推导）；
+    #                         # 自定义时用绝对路径，避免受进程工作目录影响
+
   - id: tenant
     url: plugins.tenant:plugin
     config:
